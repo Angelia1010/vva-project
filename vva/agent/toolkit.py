@@ -67,7 +67,7 @@ class ToolSet:
         return [s for p in self.providers for s in p.schemas()]
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
-        # 每次按当前的工具定义分发：有的工具会随配置变化出现或消失（如场景包里新增了目标）
+        # 每次按当前的工具定义分发：有的工具会随配置变化出现或消失（如技能里新增了目标）
         p = next((p for p in self.providers if name in p.names()), None)
         if p is None:
             return json.dumps({"error": f"未知工具 {name}"}, ensure_ascii=False)

@@ -14,10 +14,12 @@ class FakeLLM:
         self.script = list(script)
         self.calls: list[list[dict]] = []
         self.tool_choices: list[str] = []
+        self.tool_lists: list[list[dict]] = []
 
     async def stream(self, messages, tools=None, tool_choice="auto"):
         self.calls.append(messages)
         self.tool_choices.append(tool_choice)
+        self.tool_lists.append(tools or [])
         item = self.script.pop(0) if self.script else "好的。"
         if isinstance(item, list):
             yield "tool_calls", [{"id": f"c{i}", "name": n, "arguments": json.dumps(a, ensure_ascii=False)}

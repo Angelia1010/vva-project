@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>技能 - 监控值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<style>
+  .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+
+  /* 左侧：技能列表，像值班表一样一行一个 */
+  .roster { position: sticky; top: 16px; padding: 0; overflow: hidden; }
+  .roster-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+  .roster-head h2 { margin: 0; font-size: 15px; flex: 1; }
+  .roster ul { list-style: none; margin: 0; padding: 0; max-height: calc(100vh - 220px); overflow-y: auto; }
+  .roster li button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 11px 14px 11px 12px; cursor: pointer;
+                      border-left: 4px solid transparent; border-bottom: 1px solid #e3e8ec; }
+  .roster li button:hover { background: #f1f4f7; }
+  .roster li button:focus-visible { outline: 2px solid var(--steel); outline-offset: -2px; }
+  .roster li button[aria-current="true"] { background: var(--steel-soft); border-left-color: var(--steel); }
+  .roster .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .roster .name::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #aab5bf; flex: 0 0 auto; }
+  .roster .on .name::before { background: var(--lamp-ok); }
+  .roster .desc { display: block; color: var(--ink-2); font-size: 12px; margin: 2px 0 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-size: 11px; font-weight: 400; padding: 0 6px; border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-2); }
+  .new-form { display: none; padding: 12px 14px; border-bottom: 1px solid var(--rule); background: #f6f8fa; }
+  .new-form.open { display: block; }
+  .new-form .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .roster .empty { padding: 18px 14px; color: var(--ink-2); font-size: 13px; }
+
+  /* 右侧：技能详情 */
+  .detail-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .detail-head h2 { margin: 0; font-size: 20px; }
+  .detail-head .spacer { flex: 1; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
+  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #b7c1ca; position: relative; cursor: pointer; margin: 0; }
+  .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch input:checked { background: var(--lamp-ok); }
+  .switch input:checked::after { left: 18px; }
+  .switch input:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 0 18px; }
+  #f-body { min-height: 260px; font-size: 14px; }
+  .plugin-note { margin-top: 10px; padding: 8px 12px; background: #f1f4f7; border-left: 3px solid var(--steel); font-size: 13px; }
+  .detail-actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
+  .detail-actions .spacer { flex: 1; }
+
+  .targets { margin-top: 18px; }
+  .targets-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .targets-head h3 { margin: 0; font-size: 15px; }
+  .targets-head .spacer { flex: 1; }
+  .editor { display: none; border-left: 4px solid var(--steel); margin-bottom: 12px; }
+  .editor.open { display: block; }
+  .editor .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .editor .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .target { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; padding: 14px; margin-bottom: 10px; }
+  .refs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; align-content: start; }
+  .ref { position: relative; aspect-ratio: 4 / 3; background: #dfe5ea; border-radius: 4px; overflow: hidden; }
+  .ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ref button { position: absolute; top: 4px; right: 4px; padding: 0 7px; line-height: 20px; font-size: 12px;
+                background: rgba(23,33,43,.72); color: #fff; border: 0; border-radius: 3px; }
+  .ref.add { display: flex; align-items: center; justify-content: center; border: 1px dashed #9aa7b3; background: transparent;
+             color: var(--ink-2); font-size: 13px; cursor: pointer; text-align: center; padding: 6px; }
+  .ref.add:hover, .ref.add:focus-within { border-color: var(--steel); color: var(--steel); }
+  .ref.add input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .target h4 { margin: 0; font-size: 16px; }
+  .target .aka { color: var(--ink-2); font-size: 13px; margin-left: 8px; font-weight: 400; }
+  .target dl { display: grid; grid-template-columns: 4em 1fr; gap: 4px 10px; margin: 8px 0 10px; font-size: 13px; }
+  .target dt { color: var(--ink-2); } .target dd { margin: 0; }
+  .target .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .target .warn { color: #8a5a00; font-size: 13px; margin: 8px 0 0; }
+  .placeholder { padding: 40px 20px; text-align: center; color: var(--ink-2); }
+
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; }
+    .roster { position: static; }
+    .roster ul { max-height: none; }
+    .grid2, .editor .cols, .target { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header class="duty">
+  <span class="brand">监控值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">监控</a>
+    <a href="/skills" aria-current="page">技能</a>
+    <a href="/knowledge">知识库</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>技能</h1>
+      <p>每个技能是一套针对某类任务的做法：用途描述、判断方法与标准、特定目标的参考图、规则模板、热词。监控助手平时只看到技能的名称和用途，用得上时才加载全文。保存后立即生效。</p>
+    </div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="layout">
+    <aside class="panel roster" aria-labelledby="t-roster">
+      <div class="roster-head">
+        <h2 id="t-roster">技能列表</h2>
+        <button class="primary" id="btn-new-skill" type="button">新建技能</button>
+      </div>
+      <div class="new-form" id="new-form">
+        <label class="field" for="n-name" style="margin-top:0">名称</label>
+        <input id="n-name" type="text" placeholder="访客管理">
+        <label class="field" for="n-desc">什么时候用</label>
+        <input id="n-desc" type="text" placeholder="问到访客、陌生人、登记时使用">
+        <div class="actions"><button class="primary" id="btn-create" type="button">创建</button><button id="btn-create-cancel" type="button">取消</button></div>
+      </div>
+      <ul id="roster"></ul>
+    </aside>
+
+    <section id="detail">
+      <div class="panel placeholder">从左侧选择一个技能，或新建一个。</div>
+    </section>
+  </div>
+</div>
+
+<template id="tpl-detail">
+  <div class="panel">
+    <div class="detail-head">
+      <h2 class="d-name"></h2>
+      <span class="spacer"></span>
+      <label class="switch"><input type="checkbox" class="f-enabled">启用</label>
+      <label class="switch" title="常驻：正文每次都写进提示词，适合简短的现场概况"><input type="checkbox" class="f-always">常驻</label>
+    </div>
+    <div class="grid2">
+      <div>
+        <label class="field">什么时候用<span class="muted">监控助手据此判断要不要加载，写清楚涉及的对象和问题</span></label>
+        <input type="text" class="f-desc" placeholder="问到压力表读数、是否超压、空压机状态时使用">
+        <label class="field">做法与标准<span class="muted">SKILL.md 正文，支持 Markdown</span></label>
+        <textarea id="f-body" class="f-body" placeholder="## 判断方法&#10;1. …&#10;&#10;## 判断标准&#10;- 正常范围 …"></textarea>
+        <div class="plugin-note" hidden></div>
+      </div>
+      <div>
+        <label class="field">规则模板<span class="muted">条件 | 冷却秒数 | 是/否</span></label>
+        <textarea class="f-rules" placeholder="压力表指针超过 0.6 兆帕 | 600 | 是"></textarea>
+        <label class="field">语音热词<span class="muted">逗号分隔</span></label>
+        <input type="text" class="f-hotwords" placeholder="压力表，兆帕">
+        <label class="field">只用于这些摄像头<span class="muted">空着表示全部</span></label>
+        <input type="text" class="f-cameras" placeholder="cam0">
+      </div>
+    </div>
+    <div class="detail-actions">
+      <button class="primary b-save" type="button">保存技能</button>
+      <span class="spacer"></span>
+      <button class="danger b-delete" type="button">删除技能</button>
+    </div>
+  </div>
+
+  <div class="targets">
+    <div class="targets-head">
+      <h3>特定目标</h3>
+      <span class="muted">每个目标 2~3 张裁好的参考图，不同角度或状态各一张</span>
+      <span class="spacer"></span>
+      <button class="primary b-new-obj" type="button">新增目标</button>
+    </div>
+    <div class="panel editor">
+      <h3 class="e-title" style="margin:0 0 4px;font-size:15px">新增目标</h3>
+      <div class="cols">
+        <div>
+          <label class="field">名称</label><input type="text" class="o-name" placeholder="压力表">
+          <label class="field">别名<span class="muted">逗号分隔</span></label><input type="text" class="o-aliases" placeholder="表盘，压力计">
+          <label class="field">外观</label><textarea class="o-desc" placeholder="圆形白色表盘，黑色指针"></textarea>
+        </div>
+        <div>
+          <label class="field">正常时</label><textarea class="o-normal" placeholder="指针在 0.2~0.5 之间"></textarea>
+          <label class="field">异常时</label><textarea class="o-abnormal" placeholder="指针超过 0.6"></textarea>
+        </div>
+      </div>
+      <div class="actions"><button class="primary b-save-obj" type="button">保存目标</button><button class="b-cancel-obj" type="button">取消</button></div>
+    </div>
+    <div class="objects"></div>
+  </div>
+</template>
+
+<script src="/static/console.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const enc = encodeURIComponent;
+let current = null;
+let msgTimer = null;
+function msg(text, cls) {
+  const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || "");
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000);
+}
+function splitList(s) { return s.split(/[,，、\n]/).map(x => x.trim()).filter(Boolean); }
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+async function call(method, url, body, isJson = true) {
+  const headers = { "X-Token": adminToken() };
+  if (body !== undefined && isJson) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, { method, headers, body: body === undefined ? undefined : (isJson ? JSON.stringify(body) : body) });
+  if (!res.ok) {
+    let d = String(res.status); try { d = (await res.json()).detail || d; } catch (e) {}
+    if (res.status === 401) { $("token").style.display = "block"; $("token").focus(); }
+    throw new Error(d);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------- 列表
+async function loadRoster(select) {
+  const data = await call("GET", "/api/skills");
+  if (data.token_required) $("token").style.display = "block";
+  const ul = $("roster"); ul.innerHTML = "";
+  if (!data.skills.length) ul.innerHTML = '<li class="empty">还没有技能，点“新建技能”开始。</li>';
+  for (const s of data.skills) {
+    const li = document.createElement("li"); li.className = s.enabled ? "on" : "";
+    const tags = [s.always && "常驻", s.has_tools && "专用工具"].filter(Boolean).map(t => `<span class="tag">${t}</span>`).join("");
+    li.innerHTML = `<button type="button"><span class="name">${esc(s.name)} ${tags}</span><span class="desc">${esc(s.description || (s.enabled ? "" : "已停用"))}</span></button>`;
+    const b = li.querySelector("button");
+    b.setAttribute("aria-current", String(s.name === (select || current)));
+    b.onclick = () => openSkill(s.name);
+    ul.appendChild(li);
+  }
+  return data.skills;
+}
+
+// ---------------------------------------------------------------- 详情
+async function openSkill(name) {
+  try { renderDetail(await call("GET", "/api/skills/" + enc(name))); }
+  catch (e) { msg("无法打开技能：" + e.message, "err"); return; }
+  document.querySelectorAll("#roster button").forEach(b => b.setAttribute("aria-current", String(b.querySelector(".name").firstChild.textContent.trim() === name)));
+}
+
+function renderDetail(s) {
+  current = s.name;
+  const box = $("detail"); box.innerHTML = "";
+  box.appendChild($("tpl-detail").content.cloneNode(true));
+  const q = (sel) => box.querySelector(sel);
+  q(".d-name").textContent = s.name;
+  q(".f-enabled").checked = s.enabled; q(".f-always").checked = s.always;
+  q(".f-desc").value = s.description; q(".f-body").value = s.body;
+  q(".f-rules").value = s.rules.map(r => `${r.condition} | ${r.cooldown_s} | ${r.enabled ? "是" : "否"}`).join("\n");
+  q(".f-hotwords").value = s.hotwords.join("，"); q(".f-cameras").value = s.cameras.join("，");
+  if (s.has_tools) {
+    const n = q(".plugin-note"); n.hidden = false;
+    n.textContent = s.plugin_loaded ? "这个技能带有专用工具（tools.py），加载技能后可用。修改代码需在服务器上进行并重启服务。"
+                                    : "这个技能目录里有 tools.py，但没有加载成功，请查看服务日志。";
+  }
+  q(".b-save").onclick = () => saveSkill(q);
+  for (const sel of [".f-enabled", ".f-always"]) q(sel).onchange = () => saveSkill(q, "已更新开关");
+  q(".b-delete").onclick = async () => {
+    if (!confirm(`删除技能“${s.name}”，包括它的目标和参考图？`)) return;
+    try { await call("DELETE", "/api/skills/" + enc(s.name)); current = null; await loadRoster();
+          $("detail").innerHTML = '<div class="panel placeholder">已删除。从左侧选择一个技能，或新建一个。</div>'; msg("已删除技能", "ok"); }
+    catch (e) { msg("删除失败：" + e.message, "err"); }
+  };
+  q(".b-new-obj").onclick = () => openEditor(q, null);
+  q(".b-cancel-obj").onclick = () => q(".editor").classList.remove("open");
+  q(".b-save-obj").onclick = () => saveObject(q);
+  renderObjects(q, s);
+}
+
+async function saveSkill(q, okText) {
+  const rules = q(".f-rules").value.split("\n").map(l => l.split(/[|｜]/).map(x => x.trim())).filter(p => p[0])
+    .map(p => ({ condition: p[0], cooldown_s: Number(p[1]) || 60, enabled: !/^(否|no|false|0)$/i.test(p[2] || "") }));
+  try {
+    const s = await call("PUT", "/api/skills/" + enc(current), {
+      description: q(".f-desc").value.trim(), body: q(".f-body").value, enabled: q(".f-enabled").checked,
+      always: q(".f-always").checked, rules, hotwords: splitList(q(".f-hotwords").value), cameras: splitList(q(".f-cameras").value) });
+    await loadRoster(); renderDetail(s); msg(okText || "已保存技能", "ok");
+  } catch (e) { msg("没有保存：" + e.message, "err"); }
+}
+
+function openEditor(q, o) {
+  q(".e-title").textContent = o ? `编辑“${o.name}”` : "新增目标";
+  q(".o-name").value = o ? o.name : ""; q(".o-name").readOnly = !!o;
+  q(".o-aliases").value = o ? o.aliases.join("，") : "";
+  q(".o-desc").value = o ? o.description : ""; q(".o-normal").value = o ? o.normal : ""; q(".o-abnormal").value = o ? o.abnormal : "";
+  q(".editor").classList.add("open"); (o ? q(".o-aliases") : q(".o-name")).focus();
+}
+
+async function saveObject(q) {
+  if (!q(".o-name").value.trim()) { msg("请填写目标名称", "err"); q(".o-name").focus(); return; }
+  await objAct(() => call("POST", `/api/skills/${enc(current)}/objects`, {
+    name: q(".o-name").value.trim(), aliases: splitList(q(".o-aliases").value), description: q(".o-desc").value.trim(),
+    normal: q(".o-normal").value.trim(), abnormal: q(".o-abnormal").value.trim() }), "已保存目标，接着给它上传参考图");
+}
+
+async function objAct(fn, okText) {
+  try { const s = await fn(); renderDetail(s); await loadRoster(); msg(okText, "ok"); }
+  catch (e) { msg("没有保存：" + e.message, "err"); }
+}
+
+function renderObjects(q, s) {
+  const box = q(".objects"); box.innerHTML = "";
+  if (!s.objects.length) {
+    box.innerHTML = '<p class="hint">这个技能还没有特定目标。需要认出专用设备、指示灯、工牌、标识时再添加。</p>';
+    return;
+  }
+  const base = `/api/skills/${enc(s.name)}/objects/`;
+  for (const o of s.objects) {
+    const ob = base + enc(o.name);
+    const el = document.createElement("article"); el.className = "panel target";
+    const rows = [["外观", o.description], ["正常时", o.normal], ["异常时", o.abnormal]].filter(r => r[1]);
+    el.innerHTML = `<div class="refs"></div><div>
+      <h4>${esc(o.name)}${o.aliases.length ? `<span class="aka">也叫 ${esc(o.aliases.join("、"))}</span>` : ""}</h4>
+      ${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : '<p class="hint">还没有描述。</p>'}
+      <div class="row"><button class="snap" type="button">截取当前画面</button><button class="edit" type="button">编辑</button>
+        <button class="danger del" type="button">删除目标</button></div>
+      ${o.images.length ? "" : '<p class="warn">还没有参考图：只有文字描述时，辨认效果会差一些。</p>'}</div>`;
+    const refs = el.querySelector(".refs");
+    for (const f of o.images) {
+      const r = document.createElement("div"); r.className = "ref";
+      r.innerHTML = `<img alt="${esc(o.name)}参考图" src="${ob}/images/${f}?t=${Date.now()}"><button type="button">删除</button>`;
+      r.querySelector("button").onclick = () => objAct(() => call("DELETE", `${ob}/images/${f}`), "已删除参考图");
+      refs.appendChild(r);
+    }
+    const add = document.createElement("label"); add.className = "ref add";
+    add.innerHTML = '上传参考图<input type="file" accept="image/*" multiple>';
+    add.querySelector("input").onchange = async (e) => {
+      for (const file of e.target.files) await objAct(() => call("POST", `${ob}/images`, file, false), "已上传参考图");
+    };
+    refs.appendChild(add);
+    el.querySelector(".snap").onclick = () => objAct(() => call("POST", `${ob}/images?from=snapshot`), "已截取当前画面。目标较小时，建议换成裁剪好的局部图");
+    el.querySelector(".edit").onclick = () => openEditor(q, o);
+    el.querySelector(".del").onclick = () => { if (confirm(`删除“${o.name}”和它的参考图？`)) objAct(() => call("DELETE", ob), "已删除目标"); };
+    box.appendChild(el);
+  }
+}
+
+// ---------------------------------------------------------------- 新建
+$("btn-new-skill").onclick = () => { $("new-form").classList.add("open"); $("n-name").focus(); };
+$("btn-create-cancel").onclick = () => $("new-form").classList.remove("open");
+$("btn-create").onclick = async () => {
+  const name = $("n-name").value.trim();
+  if (!name) { msg("请填写技能名称", "err"); $("n-name").focus(); return; }
+  try {
+    const s = await call("POST", "/api/skills", { name, description: $("n-desc").value.trim() });
+    $("new-form").classList.remove("open"); $("n-name").value = ""; $("n-desc").value = "";
+    current = s.name; await loadRoster(); renderDetail(s); msg(`已创建技能“${s.name}”，接着写做法与标准`, "ok");
+    document.querySelector("#detail .f-body").focus();
+  } catch (e) { msg("没有创建：" + e.message, "err"); }
+};
+
+(async () => {
+  try {
+    const skills = await loadRoster();
+    const first = skills.find(s => s.enabled) || skills[0];
+    if (first) openSkill(first.name);
+  } catch (e) { msg("无法读取技能：" + (String(e.message) === "404" ? "服务端未开启技能（skills.enabled）" : e.message), "err"); }
+})();
+</script>
+</body>
+</html>

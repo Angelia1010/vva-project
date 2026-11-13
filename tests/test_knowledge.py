@@ -151,7 +151,7 @@ def test_app_exposes_knowledge_tool(tmp_path):
         cfg = load_config(None)
         cfg["video"]["type"] = "push"
         cfg["observer"]["enabled"] = False
-        for k in ("memory", "scene", "knowledge"):
+        for k in ("memory", "skills", "knowledge"):
             cfg[k]["dir"] = str(tmp_path / k)
         llm = FakeLLM([[("ask_knowledge", {"question": "夜间能进设备间吗"})], "夜间禁止进入 [1]。", "按《巡检规范》，夜间禁止进入。"])
         app = App(cfg, llm=llm, vlm=FakeVLM(), enable_audio=False)

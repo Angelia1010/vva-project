@@ -38,7 +38,7 @@ class Observer:
                  image_side: int = 1024, scene_hint: str = "",
                  hint_provider: Callable[[], str] | None = None,
                  references: Callable[[str], list[tuple[str, bytes]]] | None = None, **_: Any) -> None:
-        """hint_provider：动态的场景说明（如场景包）；references：按规则文字取参考图 [(说明, jpeg)]。"""
+        """hint_provider：动态的场景说明（如常驻技能）；references：按规则文字取参考图 [(说明, jpeg)]。"""
         self.buffer, self.vlm, self.timeline, self.rules, self.bus = buffer, vlm, timeline, rules, bus
         self.interval = float(interval)
         self.max_idle = float(max_idle)
@@ -67,7 +67,7 @@ class Observer:
         return diff >= self.change_threshold or now - self._last_described >= idle_limit, sig
 
     def _reference_images(self) -> list[tuple[str, bytes]]:
-        """有监控规则提到场景包里的目标时，带上它们的参考图帮助辨认。"""
+        """有监控规则提到技能里的目标时，带上它们的参考图帮助辨认。"""
         if not (self.references and self.rules):
             return []
         return self.references(" ".join(r.condition for r in self.rules.list()))[:4]

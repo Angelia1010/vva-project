@@ -76,7 +76,7 @@
   <span class="brand">监控值守台</span>
   <nav aria-label="页面">
     <a href="/browser" aria-current="page">监控</a>
-    <a href="/scene">场景包</a>
+    <a href="/skills">技能</a>
     <a href="/knowledge">知识库</a>
   </nav>
   <div class="lamps">
@@ -113,9 +113,9 @@
 
     <div class="setup" aria-label="现场配置">
       <div>
-        <h3>场景包</h3>
+        <h3>技能</h3>
         <p id="setup-scene">正在读取…</p>
-        <a class="go" href="/scene">管理场景包</a>
+        <a class="go" href="/skills">管理技能</a>
       </div>
       <div>
         <h3>知识库</h3>
@@ -452,12 +452,15 @@ $("btn-mic").onclick = async () => {
 async function loadSetup() {
   const sceneEl = $("setup-scene"), kbEl = $("setup-kb");
   try {
-    const sc = await (await fetch("/api/scene")).json();
-    const imgs = sc.objects.reduce((n, o) => n + o.images.length, 0);
-    sceneEl.innerHTML = sc.objects.length || sc.description
-      ? `<b>${sc.objects.length}</b> 个特定目标，<b>${imgs}</b> 张参考图，<b>${sc.rules.length}</b> 条规则模板`
-      : '<span class="empty">还没有配置。</span>告诉模型现场有什么、专用设备长什么样。';
-  } catch (e) { sceneEl.textContent = "未开启场景包"; }
+    const res = await fetch("/api/skills");
+    if (!res.ok) throw new Error();
+    const on = (await res.json()).skills.filter(s => s.enabled);
+    const objs = on.reduce((n, s) => n + s.objects.length, 0);
+    const imgs = on.reduce((n, s) => n + s.objects.reduce((m, o) => m + o.images.length, 0), 0);
+    sceneEl.innerHTML = on.length
+      ? `<b>${on.length}</b> 个技能已启用，<b>${objs}</b> 个特定目标，<b>${imgs}</b> 张参考图`
+      : '<span class="empty">还没有启用的技能。</span>告诉模型现场有什么、专用设备长什么样、怎么判断。';
+  } catch (e) { sceneEl.textContent = "未开启技能"; }
   try {
     const kb = await (await fetch("/api/knowledge")).json();
     const ready = kb.documents.filter(d => d.status === "ready").length;
