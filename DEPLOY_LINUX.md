@@ -476,3 +476,49 @@ cp config.2x3090.yaml config.yaml
 sudo scripts/install_systemd.sh --port 9000
 sudo systemctl restart vva-vlm vva-tts vva-asr vva-app
 ```
+
+## 13. 接入钉钉（可选）
+
+能做的和飞书一样：私聊机器人或在群里 @机器人 提问、下指令（文字或语音），回答附带画面截图；告警推送到指定的群；定时发监控报告。
+使用钉钉的 **Stream 模式**接收消息，服务器不需要公网 IP。语音消息直接用钉钉自带的识别结果，不需要 ffmpeg。
+
+### 13.1 安装
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+source .venv/bin/activate
+uv pip install "dingtalk-stream>=0.20"
+sudo systemctl restart vva-app
+```
+
+### 13.2 在钉钉开放平台创建应用
+
+1. 打开 [钉钉开放平台](https://open-dev.dingtalk.com/fe/app) → “应用开发” → 创建**企业内部应用**，在“凭证与基础信息”里记下 **Client ID**（原 AppKey）和 **Client Secret**（原 AppSecret）。
+2. “添加应用能力” → 添加**机器人**，填写名称、简介，**消息接收模式选 Stream 模式**，保存。
+3. “权限管理”里开通：
+   - 企业内机器人发送消息权限（`qyapi_robot_sendmsg`）
+   - 机器人下载文件（`Robot.File.Download`，钉钉没识别出语音文字时才用到）
+4. “版本管理与发布” → 创建版本并发布，可见范围选需要使用的人。
+
+### 13.3 在网页上配置
+
+打开 `https://<服务器IP>:9000/dingtalk`：
+
+1. 填写 Client ID、Client Secret，点“测试连接”。
+2. 打开“开启钉钉接入”，点“保存并生效”，状态变成“运行中”即连上了。
+3. 私聊机器人说句话；或在钉钉群“设置 → 机器人 → 添加机器人”里找到这个应用的机器人，加进群后 @它 说句话。
+4. 会话会出现在右侧“最近的消息”里，点“设为告警群”“设为报告群”，再点“保存并生效”。
+5. 点“发测试消息”，确认群里能收到。
+
+配置保存在 `data/channels/dingtalk.yaml`（权限 600），会覆盖 `config.yaml` 里的同名项。也可以手动写进 `config.yaml`，字段见 `config.example.yaml` 的 `channels.dingtalk`。
+
+### 13.4 常见问题
+
+| 现象 | 处理 |
+|---|---|
+| 页面提示“还没有安装接收钉钉消息的组件” | 执行 13.1 的安装命令并重启服务 |
+| 测试连接“获取访问凭证失败” | 检查 Client ID / Client Secret |
+| 状态“运行中”但机器人收不到消息 | 确认机器人的消息接收模式是 Stream 模式、应用已发布、你在可见范围内 |
+| 主动推送失败，提示没有权限 | 开通“企业内机器人发送消息权限”后重新发布应用 |
+| 推送到群失败 | 机器人不在这个群里：在群设置里添加机器人 |
+| 回答有文字但没有画面 | 查看日志里“发送钉钉画面失败”的原因；可以在页面关掉“附带画面截图” |

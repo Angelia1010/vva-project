@@ -1,6 +1,6 @@
 """接入入口的管理：按配置创建、启停入口；网页修改的配置保存在 data/channels/<入口>.yaml，覆盖 config.yaml 中的同名项。
 
-配置变化时尽量直接生效；连接参数变化（如飞书的 app_id）需要重启服务，由 restart_required 告知调用方。
+配置变化时尽量直接生效；连接参数变化（如飞书的 app_id、钉钉的 Client ID）需要重启服务，由 restart_required 告知调用方。
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 
 BUILTIN = {
     "feishu": "vva.channels.feishu:FeishuChannel",
+    "dingtalk": "vva.channels.dingtalk:DingTalkChannel",
 }
 
 

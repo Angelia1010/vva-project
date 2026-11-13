@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>钉钉 - 监控值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 20px; align-items: start; }
+
+  /* 连接状态条 */
+  .state { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px;
+           background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid #9aa7b3; border-radius: 6px; }
+  .state.ok { border-left-color: var(--lamp-ok); } .state.err { border-left-color: var(--lamp-alert); } .state.warn { border-left-color: var(--lamp-busy); }
+  .state .lamp { width: 12px; height: 12px; border-radius: 50%; background: #9aa7b3; flex: 0 0 auto; }
+  .state.ok .lamp { background: var(--lamp-ok); box-shadow: 0 0 6px var(--lamp-ok); }
+  .state.err .lamp { background: var(--lamp-alert); } .state.warn .lamp { background: var(--lamp-busy); }
+  .state .text { flex: 1; min-width: 220px; }
+  .state .text strong { display: block; font-size: 15px; }
+  .state .text span { color: var(--ink-2); font-size: 13px; }
+  .notes { margin: -6px 0 16px; display: grid; gap: 6px; }
+  .note { padding: 8px 12px; font-size: 13px; background: #fff8e8; border-left: 3px solid var(--lamp-busy); color: #6e4c00; }
+  .note.restart { background: #fdf0ee; border-left-color: var(--lamp-alert); color: #8a2a20; display: flex; align-items: center; gap: 12px; }
+  .note code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
+
+  /* 表单分组：同一个面板里用分隔线分段 */
+  .form { padding: 0; }
+  .group { padding: 16px 18px; border-bottom: 1px solid var(--rule); }
+  .group h2 { margin: 0 0 2px; font-size: 15px; }
+  .group > p { margin: 0 0 4px; color: var(--ink-2); font-size: 13px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  textarea.ids { min-height: 64px; font-family: var(--digits); font-size: 13px; }
+  .switches { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 12px; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
+  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #b7c1ca; position: relative; cursor: pointer; margin: 0; }
+  .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch input:checked { background: var(--lamp-ok); }
+  .switch input:checked::after { left: 18px; }
+  .switch input:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+  .switch.big { font-size: 15px; font-weight: 600; }
+  .inline { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .result { font-size: 13px; } .result.ok { color: var(--lamp-ok); } .result.err { color: var(--lamp-alert); }
+  .savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+             background: var(--panel); border-top: 1px solid var(--rule); border-radius: 0 0 6px 6px; box-shadow: 0 -6px 12px -10px rgba(23,33,43,.35); }
+  .savebar .dirty { color: #8a5a00; font-size: 13px; display: none; }
+  .savebar .dirty.on { display: inline; }
+
+  /* 右侧：最近的消息 */
+  .side { display: grid; gap: 16px; position: sticky; top: 16px; }
+  .chat { padding: 10px 0; border-bottom: 1px solid #e3e8ec; font-size: 13px; }
+  .chat:last-child { border-bottom: 0; }
+  .chat .head { display: flex; gap: 8px; align-items: baseline; }
+  .chat .kind { font-size: 11px; padding: 0 6px; border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-2); }
+  .chat .id { font-family: var(--digits); word-break: break-all; }
+  .chat .when { margin-left: auto; color: var(--ink-2); font-family: var(--digits); white-space: nowrap; }
+  .chat .said { color: var(--ink-2); margin: 2px 0 6px; }
+  .chat .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chat .acts button { padding: 3px 9px; font-size: 12px; }
+  .empty { color: var(--ink-2); font-size: 13px; line-height: 1.8; }
+  details.steps summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details.steps ol { padding-left: 20px; margin: 10px 0 0; font-size: 13px; line-height: 1.9; }
+  details.steps code { background: #eef1f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .side { position: static; } .row2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="duty">
+  <span class="brand">监控值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">监控</a>
+    <a href="/skills">技能</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/feishu">飞书</a>
+    <a href="/dingtalk" aria-current="page">钉钉</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>钉钉</h1>
+      <p>接入后可以在钉钉里私聊机器人或在群里 @它 提问、下指令（支持语音），告警和定时报告会推送到指定的群。使用 Stream 模式接收消息，服务器不需要公网 IP。</p>
+    </div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="state" id="state" role="status">
+    <span class="lamp" aria-hidden="true"></span>
+    <div class="text"><strong id="state-title">正在读取…</strong><span id="state-detail"></span></div>
+  </div>
+  <div class="notes" id="notes"></div>
+
+  <div class="layout">
+    <section class="panel form" aria-label="钉钉配置">
+      <div class="group">
+        <label class="switch big"><input type="checkbox" id="enabled">开启钉钉接入</label>
+      </div>
+
+      <div class="group">
+        <h2>应用凭证</h2>
+        <p>在钉钉开放平台应用的“凭证与基础信息”页面复制。步骤见右侧“配置步骤”。</p>
+        <div class="row2">
+          <div><label class="field" for="client_id">Client ID<span class="muted">原 AppKey</span></label><input id="client_id" type="text" placeholder="dingxxxxxxxxxxxxxxxx" autocomplete="off"></div>
+          <div><label class="field" for="client_secret">Client Secret<span class="muted">原 AppSecret</span></label><input id="client_secret" type="password" autocomplete="new-password"></div>
+        </div>
+        <label class="field" for="robot_code">RobotCode<span class="muted">一般与 Client ID 相同，留空即可</span></label>
+        <input id="robot_code" type="text" placeholder="留空则使用 Client ID" autocomplete="off">
+        <div class="inline"><button type="button" id="btn-check">测试连接</button><span class="result" id="check-result"></span></div>
+      </div>
+
+      <div class="group">
+        <h2>推送</h2>
+        <p>群的 chat_id（cid 开头）可以在右侧“最近的消息”里一键加入，或在群里 @机器人 发送 <code>/id</code> 获取。也可以填员工 userId，单独发给这个人。每行一个。</p>
+        <div class="row2">
+          <div><label class="field" for="alert_chats">告警推送到</label><textarea id="alert_chats" class="ids" placeholder="cidxxxxxxxx=="></textarea></div>
+          <div><label class="field" for="report_chats">定时报告发到</label><textarea id="report_chats" class="ids" placeholder="cidxxxxxxxx=="></textarea></div>
+        </div>
+        <div class="row2">
+          <div><label class="field" for="report_times">报告时间<span class="muted">逗号分隔</span></label><input id="report_times" type="text" placeholder="08:00, 18:00"></div>
+          <div><label class="field" for="web_url">“查看现场”链接</label><input id="web_url" type="text" placeholder="https://服务器IP:9000/browser"></div>
+        </div>
+        <div class="switches"><label class="switch"><input type="checkbox" id="send_images">回答和告警附带画面截图</label></div>
+      </div>
+
+      <div class="group">
+        <h2>权限</h2>
+        <p>“允许使用”两项都空着时，所有能找到机器人的人都能用。管理员空着时，能用的人都可以修改提醒规则和备忘。</p>
+        <div class="row2">
+          <div><label class="field" for="allowed_chats">允许使用的群</label><textarea id="allowed_chats" class="ids" placeholder="cidxxxxxxxx=="></textarea></div>
+          <div><label class="field" for="allowed_users">允许使用的人<span class="muted">userId</span></label><textarea id="allowed_users" class="ids" placeholder="员工 userId"></textarea></div>
+        </div>
+        <label class="field" for="admin_users">管理员<span class="muted">userId，可以修改提醒规则和备忘</span></label>
+        <textarea id="admin_users" class="ids" placeholder="员工 userId"></textarea>
+        <input type="checkbox" id="require_mention" hidden checked><!-- 钉钉群里只会推送 @机器人 的消息 -->
+      </div>
+
+      <div class="savebar">
+        <button class="primary" type="button" id="btn-save">保存并生效</button>
+        <span class="dirty" id="dirty">有未保存的修改</span>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel" aria-labelledby="t-recent">
+        <h2 id="t-recent">最近的消息</h2>
+        <div id="recent"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="t-test">
+        <h2 id="t-test">发送测试消息</h2>
+        <label class="field" for="test_chat" style="margin-top:0">群的 chat_id</label>
+        <input id="test_chat" type="text" placeholder="cidxxxxxxxx==">
+        <div class="inline"><button type="button" id="btn-test">发送</button><span class="result" id="test-result"></span></div>
+      </section>
+
+      <section class="panel">
+        <details class="steps" id="steps">
+          <summary>配置步骤</summary>
+          <ol>
+            <li>打开 <a href="https://open-dev.dingtalk.com/fe/app" target="_blank" rel="noopener">钉钉开放平台</a>，在“应用开发”里创建<b>企业内部应用</b>，在“凭证与基础信息”复制 Client ID 和 Client Secret 填到左边。</li>
+            <li>“添加应用能力”里添加<b>机器人</b>，填写机器人名称、简介，<b>消息接收模式选 Stream 模式</b>，保存。</li>
+            <li>“权限管理”开通：<code>企业内机器人发送消息权限</code>（qyapi_robot_sendmsg）、<code>机器人下载文件</code>（Robot.File.Download，接收语音用）。</li>
+            <li>“版本管理与发布”创建版本并发布，可见范围选需要使用的人。</li>
+            <li>回到这里打开“开启钉钉接入”，点“保存并生效”，状态显示“运行中”即连上了。</li>
+            <li>私聊机器人，或在群设置“机器人”里添加这个机器人后在群里 @它 说句话，会话会出现在“最近的消息”里，一键设为告警群。</li>
+          </ol>
+        </details>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script src="/static/console.js"></script>
+<script>
+window.CHANNEL = { name: "dingtalk", label: "钉钉", idField: "client_id", secretField: "client_secret",
+                   texts: ["robot_code"], needsFfmpeg: false,       // 钉钉自带语音识别，一般不需要 ffmpeg
+                   sdkInstall: 'uv pip install "dingtalk-stream>=0.20"' };
+</script>
+<script src="/static/channel-settings.js"></script>
+</body>
+</html>
