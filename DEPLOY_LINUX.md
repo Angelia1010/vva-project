@@ -386,7 +386,7 @@ CUDA_VISIBLE_DEVICES=1 vllm serve models/Qwen3-Embedding-0.6B --served-model-nam
 | GPU 3 | vva-tts（8003） | Qwen3-TTS-1.7B（独占一张卡，去掉 --enforce-eager） |
 
 配置文件：`scripts/models.4x3090.env`（显卡、端口、启动参数）、`config.4x3090.yaml`（智能体配置，已关闭思考模式）。
-原方案留在 `scripts/models.2x3090.env`，旧的 `config.yaml` 在 12.3 步会备份成 `config.yaml.bak`，随时可以切回（见 12.7）。
+原方案留在 `scripts/models.2x3090.env`、`config.2x3090.yaml`，随时可以切回（见 12.7）。
 
 ### 12.1 检查
 
@@ -412,15 +412,16 @@ deactivate
 ls models/Qwen3.6-35B-A3B-FP8                # 有 config.json 和若干 .safetensors 即可
 ```
 
-### 12.3 备份并换上新配置
+### 12.3 新配置已是默认
+
+拉取本分支后，`config.yaml` 和 `scripts/models.env` 已经是 4×3090 的配置，不用再手动复制。
+如果之前在服务器上手动改过这两个文件，`git pull` 会提示冲突，先把改动挪开再拉：
 
 ```bash
-cd /data7/Vision-Voice-Agent/vva-project
-cp scripts/models.env scripts/models.env.bak
-cp config.yaml config.yaml.bak
-cp scripts/models.4x3090.env scripts/models.env
-cp config.4x3090.yaml config.yaml
-diff config.yaml.bak config.yaml            # 看看原来有没有自己改过的地方（如 scene_hint），有就改回来
+cp config.yaml config.yaml.mine; cp scripts/models.env scripts/models.env.mine
+git checkout -- config.yaml scripts/models.env
+git pull
+diff config.yaml.mine config.yaml           # 有需要保留的改动（如 scene_hint、证书路径）再补回去
 ```
 
 ### 12.4 先手动启动、逐个检查
@@ -470,7 +471,7 @@ systemctl status vva-vlm vva-tts vva-asr vva-app --no-pager | grep -E "●|Activ
 cd /data7/Vision-Voice-Agent/vva-project
 sudo systemctl stop vva-app vva-vlm vva-asr vva-tts
 cp scripts/models.2x3090.env scripts/models.env
-cp config.yaml.bak config.yaml
+cp config.2x3090.yaml config.yaml
 sudo scripts/install_systemd.sh --port 9000
 sudo systemctl restart vva-vlm vva-tts vva-asr vva-app
 ```
