@@ -251,3 +251,80 @@ python scripts/check_models.py -c config.yaml --only tts
 
 - 模型服务：用 `scripts/models.sh` 启动时在 `logs/vlm.log`、`logs/asr.log`、`logs/tts.log`；用 systemd 管理时用 `journalctl -u vva-vlm`（或 `vva-asr`、`vva-tts`）
 - 智能体服务：终端输出，或 `journalctl -u vva-app`
+
+## 10. 接入飞书（可选）
+
+能做到：私聊机器人或在群里 @机器人 提问、下指令（文字或语音消息），回答附带画面截图；监控规则触发时向指定群推送告警卡片；
+定时把监控报告发到群里。使用飞书的**长连接**接收消息，服务器不需要公网 IP。
+
+### 10.1 在飞书开放平台创建应用
+
+1. 打开 [飞书开放平台](https://open.feishu.cn/app) → 创建**企业自建应用**，在“凭证与基础信息”里记下 App ID 和 App Secret。
+2. “添加应用能力” → 添加**机器人**。
+3. “权限管理”里开通：
+   - `im:message`（获取与发送单聊、群组消息）
+   - `im:message.group_at_msg:readonly`（接收群聊中 @机器人 的消息）
+   - `im:message.p2p_msg:readonly`（读取用户发给机器人的单聊消息）
+   - `im:message:send_as_bot`（以应用的身份发消息）
+   - `im:resource`（获取消息中的资源文件，语音消息需要）
+4. “事件与回调” → 订阅方式选 **使用长连接接收事件**（先完成 10.2 并启动服务，长连接建立后才能保存）→ 添加事件 **接收消息 im.message.receive_v1**。
+5. “版本管理与发布” → 创建版本并发布。不发布的话权限不生效。
+
+### 10.2 服务器上安装与配置
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+source .venv/bin/activate
+uv pip install "lark-oapi>=1.4,<2"
+sudo apt install -y ffmpeg          # 处理飞书语音消息需要；只用文字可以不装
+```
+
+在 `config.yaml` 末尾加上（App Secret 建议用环境变量，不要写进 git）：
+
+```yaml
+channels:
+  feishu:
+    enabled: true
+    app_id: "cli_xxxxxxxx"
+    app_secret: "${FEISHU_APP_SECRET}"
+    alert_chats: []          # 告警推送到哪些群（chat_id，见下一步）
+    report_chats: []         # 定时报告发到哪些群
+    report_times: []         # 如 ["08:00", "18:00"]
+    admin_users: []          # 可以修改提醒规则、备忘的人（open_id）；为空则所有人都能改
+    allowed_chats: []        # 允许使用的群；与 allowed_users 都为空时所有人可用
+    allowed_users: []
+    web_url: "https://124.128.90.162:9000/browser"   # 卡片上“查看现场”按钮的链接
+```
+
+使用 systemd 时，把 Secret 写进服务的环境变量：
+
+```bash
+sudo systemctl edit vva-app
+# 在打开的编辑器里写入下面两行，保存退出
+[Service]
+Environment=FEISHU_APP_SECRET=你的AppSecret
+
+sudo systemctl restart vva-app
+journalctl -u vva-app -n 50 --no-pager | grep -i 飞书
+```
+
+看到“飞书入口已启动”后，回到开放平台完成 10.1 第 4、5 步。
+
+### 10.3 获取群和人的编号
+
+把机器人拉进群，在群里发 `@机器人 /id`，机器人会回复本群的 `chat_id` 和你的 `open_id`。
+把需要的编号填进 `alert_chats`、`report_chats`、`admin_users` 等配置，重启 `vva-app`。
+
+### 10.4 使用
+
+- 私聊直接发消息；群里要 @机器人。支持文字、语音消息。
+- 发“清空对话”重新开始；发“帮助”查看用法。
+- 告警卡片推送到群后，在群里 @机器人 可以接着追问（如“现在还有人吗”）。
+
+| 现象 | 处理 |
+|---|---|
+| 日志“接收飞书消息需要安装 lark-oapi” | 执行 10.2 的安装命令 |
+| 日志“获取访问凭证失败” | 检查 app_id、App Secret 环境变量 |
+| 机器人收不到消息 | 检查应用是否已发布、订阅方式是否为长连接、是否添加了 im.message.receive_v1 事件 |
+| 回复失败 `230002` | 机器人不在这个群里，把它拉进群 |
+| 语音消息没反应 | 安装 ffmpeg；确认配置了 `models.asr` |

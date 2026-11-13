@@ -27,9 +27,16 @@ vva/
                recorder.py   订阅事件写入记忆、按期限清理
                summarizer.py 每 10 分钟生成时段摘要
                tools.py      search_memory / look_at_time / remember_note 等工具
+  scene/       场景包 ── store.py    目录读写（scene.yaml + 目标参考图）
+               context.py  提示词、目标匹配、参考图、语音热词
+               tools.py    compare_with_reference 工具
+  channels/    接入入口（与核心解耦，只依赖 base.py 的 ChannelHost 接口）
+               base.py     入口接口
+               feishu/     飞书：长连接收消息、问答/指令/语音、告警卡片、定时报告、权限
   voice/       语音会话（断句→识别→过滤→播报、打断、唤醒词、按住说话）
   app.py       编排：把以上模块组装起来
-  web/         网页服务与测试页面
+  web/         网页服务与测试页面（/browser 测试页、/scene 场景包管理页）
+scenes/        场景包（example/ 为示例；实际使用 scenes/default/，不纳入 git）
 examples/      自定义摄像头引擎、跨进程推帧/推音频示例
 tests/         用假模型跑通全流程的测试
 ```
@@ -159,6 +166,30 @@ video:
 
 防误触发分三层：人声检测（webrtcvad + 频谱 + 音量）→ 300ms 内至少 6 帧人声才算开始、人声不足 0.5 秒或占比不足一半整句丢弃 →
 识别结果太短、只有语气词或常见误识别文字（如“谢谢观看”）时丢弃。参数见配置的 `vad` 和 `voice` 段。
+
+### 多会话
+
+网页（含语音）共用一个会话；飞书每个群、每个私聊各一个会话，上下文互不干扰。
+没有修改权限的会话（飞书 `admin_users` 以外的人）看不到也调用不了修改提醒规则、备忘的工具。
+
+### 场景包（`scene`）
+
+用“参考图 + 文字描述 + 判断标准 + 规则模板 + 热词”适配具体现场，不需要训练模型。在网页 `/scene` 页面管理，
+数据保存在 `scenes/default/`：
+
+- **场景说明、区域命名、判断标准**：写进智能体和后台观察的提示词
+- **特定目标**（名称、别名、外观、正常/异常状态、2~3 张参考图）：智能体用 `compare_with_reference` 对照参考图判断；
+  监控规则提到这些目标时，后台观察也会带上参考图
+- **规则模板**：自动加入监控提醒
+- **热词**：连同目标名称一起交给语音识别，提高专业术语识别率
+
+适合外观有特点的专用设备、指示灯、工服工牌、特定标识；不适合区分外观相近的型号、精确计数，也不用于识别具体是哪个人。
+
+### 接入入口（`channels`）
+
+每个入口是 `vva/channels/` 下独立的子目录，只通过 `ChannelHost` 接口（提问、记录告警、取画面、语音识别、生成报告）
+与应用交互。自定义入口：继承 `vva.channels.base.Channel`，在配置里写 `class: "path/to/my.py:MyChannel"`。
+飞书的配置步骤见 [DEPLOY_LINUX.md](DEPLOY_LINUX.md) 第 10 节。
 
 ### 长期记忆（`memory`）
 

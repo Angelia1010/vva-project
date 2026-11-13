@@ -13,6 +13,7 @@ import time
 from typing import Any, Callable
 
 from vva.agent import prompts
+from vva.agent.conversation import Conversation
 
 log = logging.getLogger(__name__)
 
@@ -50,42 +51,47 @@ class Agent:
         self.max_answer_chars = int(max_answer_chars)
         self.notes_provider = notes_provider
         self.force_tool_first = bool(force_tool_first)
-        self.history: list[dict[str, Any]] = []
+        self.default = Conversation("default", self.max_history_turns)
+        self.extra_prompt: Callable[[], str] | None = None   # 追加到系统提示词的内容（如场景包）
 
     def _system(self) -> dict[str, Any]:
         hint = f"\n## 场景说明\n{self.scene_hint}" if self.scene_hint else ""
         notes = self.notes_provider() if self.notes_provider else []
         notes_block = prompts.NOTES_BLOCK.format(notes="\n".join(f"- {n}" for n in notes)) if notes else ""
         # 提示词里给模型的字数目标比硬上限紧一半，硬上限只做兜底
+        extra = self.extra_prompt() if self.extra_prompt else ""
         return {"role": "system", "content": prompts.AGENT_SYSTEM.format(
             now=now_text(), max_chars=max(10, self.max_answer_chars // 2),
-            notes=notes_block, scene_hint=hint)}
+            notes=notes_block, scene_hint=hint) + extra}
 
-    def _trim_history(self) -> None:
-        """只保留最近 N 轮；按用户消息切分，避免工具消息失去对应的调用。"""
-        user_idx = [i for i, m in enumerate(self.history) if m["role"] == "user"]
-        if len(user_idx) > self.max_history_turns:
-            self.history = self.history[user_idx[-self.max_history_turns]:]
+    def _schemas(self, conv: Conversation) -> list[dict]:
+        return [s for s in self.tools.schemas() if s["function"]["name"] not in conv.excluded_tools]
+
+    # 不指定会话时使用默认会话（单会话场景和测试）
+    @property
+    def history(self) -> list[dict[str, Any]]:
+        return self.default.messages
 
     def add_note(self, text: str) -> None:
-        """记录系统主动说过的话（如告警），用户可以接着追问。"""
-        self.history.append({"role": "assistant", "content": text})
+        self.default.add_note(text)
 
     def reset(self) -> None:
-        self.history.clear()
+        self.default.reset()
 
     async def run(self, user_text: str, on_text: TextCallback,
-                  on_tool: Callable[[str, dict], Any] | None = None) -> str:
+                  on_tool: Callable[[str, dict], Any] | None = None,
+                  conversation: Conversation | None = None) -> str:
+        conv = conversation or self.default
         turn: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
         spoken_filler = False
         final_text = ""
         for round_idx in range(self.max_tool_rounds + 1):
             # 最后一轮不再提供工具，强制模型给出回答
-            tools = self.tools.schemas() if round_idx < self.max_tool_rounds else None
+            tools = self._schemas(conv) if round_idx < self.max_tool_rounds else None
             choice = "required" if round_idx == 0 and self.force_tool_first and tools else "auto"
             parts: list[str] = []
             calls: list[dict[str, str]] = []
-            async for kind, val in self.llm.stream([self._system(), *self.history, *turn], tools=tools,
+            async for kind, val in self.llm.stream([self._system(), *conv.messages, *turn], tools=tools,
                                                    tool_choice=choice):
                 if kind == "text":
                     parts.append(val)
@@ -117,8 +123,10 @@ class Agent:
                 if on_tool:
                     await _maybe_await(on_tool(name, args))
                 log.info("调用工具 %s %s", name, args)
-                result = await self.tools.call(name, args)
+                if name in conv.excluded_tools:
+                    result = json.dumps({"error": "当前会话没有修改权限"}, ensure_ascii=False)
+                else:
+                    result = await self.tools.call(name, args)
                 turn.append({"role": "tool", "tool_call_id": c["id"], "content": result})
-        self.history.extend(turn)
-        self._trim_history()
+        conv.extend(turn)
         return final_text

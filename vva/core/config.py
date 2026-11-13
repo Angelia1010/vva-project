@@ -86,6 +86,12 @@ DEFAULTS: dict[str, Any] = {
         "ignore_phrases": None,      # 要丢弃的识别结果（语气词、常见误识别）；None 用内置列表
         "ptt_min_ms": 300,           # 按住说话时，短于该时长的按下视为误触
     },
+    "scene": {
+        "enabled": True,
+        "dir": "scenes/default",     # 场景包目录（相对于启动目录），可在网页 /scene 页面管理
+        "max_ref_images": 3,         # 每个目标最多带几张参考图
+        "max_objects_per_call": 2,   # 一次判断最多涉及几个目标（8B 模型一次最多 8 张图）
+    },
     "memory": {
         "enabled": True,
         "dir": "data/memory",        # 数据库和关键帧图片的目录（相对于启动目录）
@@ -100,7 +106,25 @@ DEFAULTS: dict[str, Any] = {
         "max_events": 40,            # search_memory 一次最多返回多少条记录
         "max_notes": 50,
     },
+    "channels": {                    # 接入入口，见 vva/channels
+        "feishu": {
+            "enabled": False,
+            "app_id": "",
+            "app_secret": "",
+            "domain": "https://open.feishu.cn",
+            "allowed_chats": [],     # 允许使用的群 chat_id；与 allowed_users 都为空时所有人可用
+            "allowed_users": [],     # 允许使用的人 open_id
+            "admin_users": [],       # 可以修改提醒规则、备忘的人；为空时所有可用的人都能改
+            "require_mention": True, # 群聊里需要 @机器人
+            "alert_chats": [],       # 告警推送到哪些群
+            "report_chats": [],      # 定时报告发到哪些群
+            "report_times": [],      # 报告时间，如 ["08:00", "18:00"]
+            "web_url": "",           # 卡片上“查看现场”按钮的链接，如 https://124.128.90.162:9000/browser
+            "send_images": True,     # 回答和告警是否附带画面截图
+        },
+    },
     "web": {"host": "0.0.0.0", "port": 8000, "mjpeg_fps": 10, "ingest_token": "",
+            "admin_token": "",       # 场景包管理页的修改口令；为空则不校验
             "ssl_certfile": "", "ssl_keyfile": ""},
 }
 

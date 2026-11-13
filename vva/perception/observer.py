@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import Any, Callable
 
 import cv2
 import numpy as np
@@ -35,7 +35,10 @@ class Observer:
     def __init__(self, buffer: FrameBuffer, vlm: Any, timeline: Timeline, rules: WatchRules,
                  bus: EventBus, interval: float = 4.0, max_idle: float = 30.0,
                  rule_check_interval: float = 8.0, change_threshold: float = 6.0,
-                 image_side: int = 1024, scene_hint: str = "", **_: Any) -> None:
+                 image_side: int = 1024, scene_hint: str = "",
+                 hint_provider: Callable[[], str] | None = None,
+                 references: Callable[[str], list[tuple[str, bytes]]] | None = None, **_: Any) -> None:
+        """hint_provider：动态的场景说明（如场景包）；references：按规则文字取参考图 [(说明, jpeg)]。"""
         self.buffer, self.vlm, self.timeline, self.rules, self.bus = buffer, vlm, timeline, rules, bus
         self.interval = float(interval)
         self.max_idle = float(max_idle)
@@ -43,6 +46,8 @@ class Observer:
         self.change_threshold = float(change_threshold)
         self.image_side = int(image_side)
         self.scene_hint = scene_hint
+        self.hint_provider = hint_provider
+        self.references = references
         self._last_sig: np.ndarray | None = None
         self._last_frame_ts = 0.0
         self._last_described = 0.0
@@ -61,14 +66,24 @@ class Observer:
         idle_limit = min(self.max_idle, self.rule_check_interval) if self.rules else self.max_idle
         return diff >= self.change_threshold or now - self._last_described >= idle_limit, sig
 
-    def build_prompt(self) -> str:
+    def _reference_images(self) -> list[tuple[str, bytes]]:
+        """有监控规则提到场景包里的目标时，带上它们的参考图帮助辨认。"""
+        if not (self.references and self.rules):
+            return []
+        return self.references(" ".join(r.condition for r in self.rules.list()))[:4]
+
+    def build_prompt(self, refs: list[tuple[str, bytes]] | None = None) -> str:
         last = self.timeline.latest()
         prev = f"\n上一次的记录（供对比变化）：{last.summary}\n" if last else ""
         rules = ""
         if self.rules:
             lines = "\n".join(f"- {r.id}：{r.condition}" for r in self.rules.list())
             rules = prompts.OBSERVE_RULES_BLOCK.format(rules=lines)
-        hint = f"\n场景说明：{self.scene_hint}\n" if self.scene_hint else ""
+        hints = [h for h in (self.scene_hint, self.hint_provider() if self.hint_provider else "") if h]
+        hint = "\n场景说明：" + "\n".join(hints) + "\n" if hints else ""
+        if refs:
+            hint += prompts.OBSERVE_REFS_BLOCK.format(n_ref=len(refs), refs="；".join(
+                f"图{i}是{label}" for i, (label, _) in enumerate(refs, 1)))
         return prompts.OBSERVE_PROMPT.format(prev=prev, rules=rules, scene_hint=hint)
 
     async def step(self) -> TimelineEntry | None:
@@ -83,7 +98,9 @@ class Observer:
             return None
         self._last_frame_ts = frame.ts
         jpeg = encode_jpeg(resize_max_side(frame.image, self.image_side), 85)
-        text = await self.vlm.ask([jpeg], self.build_prompt(), system=prompts.OBSERVER_SYSTEM, json_mode=True)
+        refs = self._reference_images()
+        text = await self.vlm.ask([*(img for _, img in refs), jpeg], self.build_prompt(refs),
+                                  system=prompts.OBSERVER_SYSTEM, json_mode=True)
         data = parse_json(text)
         if not isinstance(data, dict) or not data.get("summary"):
             log.warning("观察结果无法解析：%s", (text or "")[:200])

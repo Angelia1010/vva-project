@@ -124,7 +124,30 @@ memory:
   keyframe_retention_days: 7
   summary_minutes: 10         # 每 10 分钟生成一段摘要；0 表示不生成
 
+# ---------------------------------------------------------------- 场景包
+# 在网页 /scene 页面管理；数据在 dir 目录（scene.yaml + objects/<目标>/参考图）
+scene:
+  enabled: true
+  dir: scenes/default
+  max_ref_images: 3
+
+# ---------------------------------------------------------------- 接入入口
+# 飞书配置步骤见 DEPLOY_LINUX.md 第 10 节
+channels:
+  feishu:
+    enabled: false
+    app_id: ""
+    app_secret: "${FEISHU_APP_SECRET}"
+    alert_chats: []          # 告警推送到哪些群（在群里 @机器人 发 /id 获取 chat_id）
+    report_chats: []
+    report_times: []         # 如 ["08:00", "18:00"]
+    admin_users: []          # 可修改提醒规则、备忘的人（open_id）；为空则所有人都能改
+    allowed_chats: []        # 与 allowed_users 都为空时所有人可用
+    allowed_users: []
+    web_url: ""              # 卡片上“查看现场”按钮的链接
+
 web:
+  admin_token: ""       # 场景包管理页的修改口令，为空则不校验
   host: 0.0.0.0
   port: 8000
   ingest_token: ""      # 设置后，外部推流需带 X-Token 请求头（音频 WebSocket 用 ?token=）

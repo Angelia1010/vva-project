@@ -254,6 +254,7 @@ def test_app_integration(tmp_path):
         cfg["audio"]["output"]["type"] = "push"
         cfg["observer"]["interval"] = 0.3
         cfg["memory"]["dir"] = str(tmp_path / "memory")
+        cfg["scene"]["dir"] = str(tmp_path / "scene")
         obs_json = json.dumps({"summary": "一块表盘", "people_count": 0, "objects": ["表盘"],
                                "activities": [], "anomalies": [], "triggered_rules": []}, ensure_ascii=False)
         vlm = FakeVLM(answers={"监控画面": obs_json})
@@ -277,7 +278,7 @@ def test_app_integration(tmp_path):
         await app.handle_user_text("问题一")
         await app.handle_user_text("问题二")
         await app._turn
-        users = [m["content"] for m in app.agent.history if m["role"] == "user"]
+        users = [m["content"] for m in app.conversations.get("web").messages if m["role"] == "user"]
         assert users[-1] == "问题二"
         await app.stop()
     asyncio.run(run())
