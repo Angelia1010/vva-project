@@ -1,4 +1,4 @@
-"""智能体可调用的视觉工具：看当前/过去画面、定位、查短期时间线、监控提醒。
+"""智能体可调用的视觉工具：看当前/过去画面、定位、查短期时间线。（职责与提醒见 vva.duties.tools）
 
 新增工具：在 schemas() 中加一个定义，并实现同名的 `tool_<name>` 异步方法即可。
 """
@@ -58,13 +58,6 @@ class VisionTools(ToolProvider):
                 ["seconds", "question"]),
             _fn("search_timeline", "查询最近一段时间（最多两小时）后台记录的画面时间线（文字摘要）。",
                 {"minutes": {"type": "number", "description": "查询最近多少分钟，默认10"}}, []),
-            _fn("add_watch", "添加一条监控提醒规则，条件满足时系统会主动提醒操作员。",
-                {"condition": {"type": "string", "description": "可从单张画面判断的条件，如“画面中没有人坐在电脑前”"},
-                 "cooldown_seconds": {"type": "number", "description": "两次提醒之间的最短间隔，默认60"}},
-                ["condition"]),
-            _fn("list_watches", "列出当前所有监控提醒规则。", {}, []),
-            _fn("remove_watch", "删除一条监控提醒规则。",
-                {"rule_id": {"type": "string", "description": "规则编号，如 r1；传 all 删除全部"}}, ["rule_id"]),
         ]
 
     # ------------------------------------------------------------------ helpers
@@ -153,21 +146,3 @@ class VisionTools(ToolProvider):
             step = len(entries) / 60
             entries = [entries[int(i * step)] for i in range(60)]
         return {"minutes": minutes, "entries": [e.to_text() for e in entries]}
-
-    async def tool_add_watch(self, condition: str, cooldown_seconds: float = 60) -> dict:
-        rule = self.rules.add(condition, cooldown_seconds or 60)
-        self.bus.publish(TOPIC_UI, {"type": "rules", "rules": [r.to_dict() for r in self.rules.list()]})
-        return {"ok": True, "rule": rule.to_dict()}
-
-    async def tool_list_watches(self) -> dict:
-        return {"rules": [r.to_dict() for r in self.rules.list()]}
-
-    async def tool_remove_watch(self, rule_id: str) -> dict:
-        if rule_id == "all":
-            for r in self.rules.list():
-                self.rules.remove(r.id)
-            ok = True
-        else:
-            ok = self.rules.remove(rule_id)
-        self.bus.publish(TOPIC_UI, {"type": "rules", "rules": [r.to_dict() for r in self.rules.list()]})
-        return {"ok": ok}

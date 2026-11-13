@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-WRITE_TOOLS = frozenset({"add_watch", "remove_watch", "remember_note", "forget_note"})
+WRITE_TOOLS = frozenset({"add_task", "remove_task", "pause_duty", "resume_duty", "remember_note", "forget_note"})
 
 
 @dataclass

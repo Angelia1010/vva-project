@@ -3,6 +3,7 @@
 各模块之间只通过接口和事件总线连接：
   视频源 ──帧──▶ 帧缓存 ◀── 工具 / 后台观察 ──▶ 多模态大模型
   语音会话 ──文字──▶ App.handle_user_text ──▶ 智能体 ──文字──▶ 语音会话 / 网页
+  后台观察 ──疑似命中──▶ 职责引擎 ──复核──▶ 告警（data/ops.db）──▶ 通知路由 ──事件──▶ 钉钉 / 飞书 / 值守台 / 现场播报
   后台观察 / 提醒 / 指令 ──事件──▶ 长期记忆（SQLite + 关键帧）◀── 记忆工具
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ from vva.agent.tools import VisionTools
 from vva.core import turn
 from vva.core.bus import TOPIC_ALERT, TOPIC_UI, EventBus
 from vva.perception.observer import Observer
-from vva.perception.timeline import Timeline, WatchRules
+from vva.perception.timeline import Timeline
 from vva.video.factory import create_video_source
 from vva.video.frame_buffer import FrameBuffer
 from vva.voice.text_split import AnswerLimiter, SentenceSplitter, ThinkFilter
@@ -57,9 +58,18 @@ class App:
         self.llm = llm or clients.ChatModel(m["agent_llm"])
         self.vlm = vlm or clients.VisionModel(m["vlm"])
 
-        # 感知 + 智能体
+        # 岗位 + 职责（data/ops.db）
+        from vva.core.sqlite import SqliteDB
+        from vva.duties import DutyManager
+        from vva.station import StationStore
+        self.ops_db = SqliteDB(cfg["duties"]["db"])
+        self.station = StationStore(self.ops_db, cfg.get("station") or {})
         self.timeline = Timeline(cfg["observer"]["timeline_minutes"])
-        self.rules = WatchRules()
+        self.duties = DutyManager(cfg["duties"], self.ops_db, self.bus, self.buffer, self.vlm, self.llm,
+                                  report=self.report, scene=self.scene_text, station_name=lambda: self.station.station.name,
+                                  observe_interval=cfg["observer"].get("rule_check_interval", 8.0))
+        self.rules = self.duties.book           # 职责清单兼容旧的监控规则接口（后台观察、技能使用）
+        self.rules.paused = self.station.station.paused
         vision_tools = VisionTools(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
 
         # 技能（可关闭）
@@ -76,7 +86,10 @@ class App:
             mem_cfg = {"look_max_tokens": cfg["agent"]["look_max_tokens"],
                        "scene_hint": cfg["agent"].get("scene_hint", ""), **cfg["memory"]}
             self.memory = LongTermMemory(mem_cfg, self.bus, self.llm, self.vlm)
-            self.memory.attach_rules(self.rules)
+            if not len(self.rules):             # 旧版的监控规则存在长期记忆里：首次启动时转成职责
+                n = self.rules.load(self.memory.store.load_rules())
+                if n:
+                    log.info("已把 %d 条旧监控规则转成职责", n)
         # 领域知识库子智能体（可关闭）
         self.knowledge = None
         if cfg["knowledge"].get("enabled", True):
@@ -90,20 +103,22 @@ class App:
             skill_tools = SkillTools(self.skills, self.buffer, self.vlm, self.bus, **cfg["agent"])
             self.skills.apply_rules(self.rules)
             self.skills.on_change(lambda: self.skills.apply_rules(self.rules))   # 网页上新增的规则模板立即生效
-        self.tools = ToolSet(vision_tools, self.memory.tools if self.memory else None, skill_tools,
+            self.duties.verifier.references = self.skills.references_for_text
+        self.tools = ToolSet(vision_tools, self.duties.tools, self.memory.tools if self.memory else None, skill_tools,
                              self.knowledge.tools if self.knowledge else None)
         self.agent = Agent(self.llm, self.tools, **cfg["agent"],
                            notes_provider=self.memory.tools.note_lines if self.memory else None)
+        self.agent.extra_prompt = self._extra_prompt
         if self.skills:
-            self.agent.extra_prompt = self.skills.prompt_block
             self.agent.tool_visible = self.skills.tool_visible
         self.conversations = ConversationStore(cfg["agent"]["max_history_turns"])
         obs_cfg = dict(cfg["observer"])
         if not obs_cfg.get("scene_hint"):
             obs_cfg["scene_hint"] = cfg["agent"].get("scene_hint", "")
+        obs_cfg["hint_provider"] = self._observer_hint
         if self.skills:
-            obs_cfg["hint_provider"] = self.skills.observer_hint
             obs_cfg["references"] = self.skills.references_for_text
+        obs_cfg["on_hit"] = self.duties.engine.on_hit
         self.observer = Observer(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **obs_cfg) \
             if obs_cfg.get("enabled", True) else None
 
@@ -139,6 +154,76 @@ class App:
         # 接入入口（飞书等），只通过 ChannelHost 接口与应用交互
         from vva.channels import ChannelManager
         self.channels = ChannelManager(cfg.get("channels") or {}, self, cfg.get("channels_settings_dir") or "data/channels")
+        self.duties.target_options = self.notify_targets
+        self.duties.target_problem = self.target_problem
+
+    # ---------------------------------------------------------------- 岗位、场景、通知对象
+    def scene_text(self) -> str:
+        st = self.station.station
+        return "；".join(x for x in (st.area, st.scene, self.cfg["agent"].get("scene_hint", "")) if x)
+
+    def _observer_hint(self) -> str:
+        parts = [self.station.station.prompt_block()]
+        if self.skills:
+            parts.append(self.skills.observer_hint())
+        return "\n".join(p for p in parts if p)
+
+    def _extra_prompt(self) -> str:
+        st = self.station.station
+        block = f"\n## 岗位\n{st.prompt_block()}\n" + (f"岗位负责人：{st.owner}\n" if st.owner else "")
+        return block + self.duties.prompt_block() + (self.skills.prompt_block() if self.skills else "")
+
+    def notify_targets(self) -> list[dict[str, str]]:
+        """可选的通知对象：值守台、现场播报、各入口的默认告警群和最近发过消息的群。"""
+        opts = [{"id": "web", "label": "值守台"}, {"id": "voice", "label": "现场播报"}]
+        labels = {"dingtalk": "钉钉", "feishu": "飞书"}
+        for name in self.channels.names():
+            cfg = self.channels.config(name)
+            if not cfg.get("enabled"):
+                continue
+            label = labels.get(name, name)
+            if cfg.get("alert_chats") and not any(o["id"] == "default" for o in opts):
+                opts.append({"id": "default", "label": "默认告警群"})
+            ch = self.channels.get(name)
+            recent = {r["chat_id"]: r for r in (ch.status().get("recent", []) if ch and hasattr(ch, "status") else [])}
+            chats = list(dict.fromkeys([*(cfg.get("alert_chats") or []), *(cfg.get("report_chats") or []),
+                                        *(c for c, r in recent.items() if r.get("chat_type") == "group")]))
+            for chat in chats:
+                title = (recent.get(chat) or {}).get("title") or ""
+                opts.append({"id": f"{name}:{chat}", "label": f"{label}·{title or chat[:12]}"})
+        return opts
+
+    def target_problem(self, target: str) -> str:
+        """通知对象发不出去的原因；没问题返回空串。"""
+        if target == "voice" and self.voice is None and self.audio_out is None:
+            return "现场播报未开启"
+        if target == "default":
+            enabled = [n for n in self.channels.names() if self.channels.config(n).get("enabled")]
+            if enabled and not any(self.channels.config(n).get("alert_chats") for n in enabled):
+                return "钉钉、飞书都没有设置默认告警群"
+            return ""
+        ch, _, _ = target.partition(":")
+        if ch in ("dingtalk", "feishu"):
+            label = {"dingtalk": "钉钉", "feishu": "飞书"}[ch]
+            if not self.channels.config(ch).get("enabled"):
+                return f"{label}未开启"
+            c = self.channels.get(ch)
+            if c is not None and getattr(c, "started", True) is False:
+                return f"{label}未连接"
+        return ""
+
+    def alert_image(self, rel: str) -> bytes | None:
+        path = self.duties.alerts.store.image_path(rel)
+        if not path:
+            return None
+        with open(path, "rb") as f:
+            return f.read()
+
+    def notify_result(self, alert_id: int | None, target: str, ok: bool, error: str = "") -> None:
+        """接入入口发送告警后回报结果，记进告警的处理经过。"""
+        if alert_id:
+            text = f"已送达 {target}" if ok else f"发送到 {target} 失败：{error}"
+            self.duties.alerts.add_event(int(alert_id), text)
 
     # ---------------------------------------------------------------- 生命周期
     async def start(self) -> None:
@@ -148,6 +233,7 @@ class App:
         if self.observer:
             self._tasks.append(asyncio.create_task(self.observer.run(), name="observer"))
         self._tasks.append(asyncio.create_task(self._alert_loop(), name="alerts"))
+        self._tasks += [asyncio.create_task(c) for c in self.duties.background_tasks()]
         if self.memory:
             self._tasks += [asyncio.create_task(c) for c in self.memory.background_tasks()]
         if self.knowledge:
@@ -172,6 +258,8 @@ class App:
             await self.memory.close()
         if self.knowledge:
             await self.knowledge.close()
+        await self.duties.close()
+        self.ops_db.close()
 
     # ---------------------------------------------------------------- 对话
     @property
@@ -212,6 +300,8 @@ class App:
         await self.interrupt(session)       # 同一会话里，新的输入会打断正在进行的回答
         self.bus.publish(TOPIC_UI, {"type": "user", "text": text, "source": source, "session": session})
         speak = session == WEB_SESSION and self.voice is not None
+        if self.observer:                   # 问答优先：后台观察让出一个周期的模型
+            self.observer.hold(self.observer.interval * 2)
         task = asyncio.create_task(self._run_turn(text, session, speak, readonly))
         self._turns[session] = task
         return task
@@ -296,15 +386,20 @@ class App:
 
     # ---------------------------------------------------------------- 主动提醒
     async def _alert_loop(self) -> None:
+        """值守台和现场播报：告警的 targets 里有 web / voice 时处理（旧版没有 targets 的提醒两者都做）。"""
         q = self.bus.subscribe(TOPIC_ALERT)
         while True:
             alert = await q.get()
+            if alert.get("kind", "alert") != "alert":
+                continue
+            targets = alert.get("targets")
             text = f"提醒：{alert['condition']}。{alert.get('evidence') or ''}".strip()
             log.info(text)
-            self.bus.publish(TOPIC_UI, {"type": "alert", "text": text, **alert})
-            self.add_note(WEB_SESSION, text)
-            if self.voice:
-                self.voice.say(text)
+            if targets is None or "web" in targets:
+                self.bus.publish(TOPIC_UI, {"type": "alert", "text": text, **alert})
+                self.add_note(WEB_SESSION, text)
+            if self.voice and (targets is None or "voice" in targets):
+                self.voice.say(alert.get("voice_text") or text)
 
     # ---------------------------------------------------------------- 状态
     def status(self) -> dict[str, Any]:
@@ -319,4 +414,6 @@ class App:
             "knowledge": self.knowledge.stats() if self.knowledge else None,
             "voice_mode": self.voice.mode if self.voice else None,
             "rules": [r.to_dict() for r in self.rules.list()],
+            "station": self.station.to_dict(),
+            "stats": self.duties.alerts.stats(),
         }

@@ -2,6 +2,9 @@
 
 为节省调用：画面没有明显变化时跳过；但为了不漏掉规则判断，
 有监控规则时至少每 rule_check_interval 秒看一次，没有规则时至少每 max_idle 秒看一次。
+
+规则（职责）命中后：设置了 on_hit 时交给它（职责引擎负责复核、告警、通知）；否则直接发 TOPIC_ALERT（旧行为）。
+只判断当前生效的规则：rules 有 active() 方法时用它（职责清单），否则用 list()。
 """
 from __future__ import annotations
 
@@ -37,8 +40,10 @@ class Observer:
                  rule_check_interval: float = 8.0, change_threshold: float = 6.0,
                  image_side: int = 1024, scene_hint: str = "",
                  hint_provider: Callable[[], str] | None = None,
-                 references: Callable[[str], list[tuple[str, bytes]]] | None = None, **_: Any) -> None:
-        """hint_provider：动态的场景说明（如常驻技能）；references：按规则文字取参考图 [(说明, jpeg)]。"""
+                 references: Callable[[str], list[tuple[str, bytes]]] | None = None,
+                 on_hit: Callable[[str, str, float, bytes], Any] | None = None, **_: Any) -> None:
+        """hint_provider：动态的场景说明（如常驻技能、岗位说明）；references：按规则文字取参考图 [(说明, jpeg)]；
+        on_hit(规则编号, 依据, 画面时间, 画面)：命中后的处理，不设置则直接发提醒。"""
         self.buffer, self.vlm, self.timeline, self.rules, self.bus = buffer, vlm, timeline, rules, bus
         self.interval = float(interval)
         self.max_idle = float(max_idle)
@@ -48,6 +53,8 @@ class Observer:
         self.scene_hint = scene_hint
         self.hint_provider = hint_provider
         self.references = references
+        self.on_hit = on_hit
+        self._hold_until = 0.0
         self._last_sig: np.ndarray | None = None
         self._last_frame_ts = 0.0
         self._last_described = 0.0
@@ -63,21 +70,28 @@ class Observer:
         if self._last_sig is None:
             return True, sig
         diff = float(np.mean(np.abs(sig - self._last_sig)))
-        idle_limit = min(self.max_idle, self.rule_check_interval) if self.rules else self.max_idle
+        idle_limit = min(self.max_idle, self.rule_check_interval) if self._watching() else self.max_idle
         return diff >= self.change_threshold or now - self._last_described >= idle_limit, sig
+
+    def _watching(self) -> list[Any]:
+        active = getattr(self.rules, "active", None)
+        return list(active()) if callable(active) else self.rules.list()
 
     def _reference_images(self) -> list[tuple[str, bytes]]:
         """有监控规则提到技能里的目标时，带上它们的参考图帮助辨认。"""
-        if not (self.references and self.rules):
+        watching = self._watching()
+        if not (self.references and watching):
             return []
-        return self.references(" ".join(r.condition for r in self.rules.list()))[:4]
+        words = [w for r in watching for w in (r.condition, *getattr(r, "objects", []))]
+        return self.references(" ".join(words))[:4]
 
     def build_prompt(self, refs: list[tuple[str, bytes]] | None = None) -> str:
         last = self.timeline.latest()
         prev = f"\n上一次的记录（供对比变化）：{last.summary}\n" if last else ""
         rules = ""
-        if self.rules:
-            lines = "\n".join(f"- {r.id}：{r.condition}" for r in self.rules.list())
+        watching = self._watching()
+        if watching:
+            lines = "\n".join(f"- {r.id}：{r.condition}" for r in watching)
             rules = prompts.OBSERVE_RULES_BLOCK.format(rules=lines)
         hints = [h for h in (self.scene_hint, self.hint_provider() if self.hint_provider else "") if h]
         hint = "\n场景说明：" + "\n".join(hints) + "\n" if hints else ""
@@ -86,8 +100,14 @@ class Observer:
                 f"图{i}是{label}" for i, (label, _) in enumerate(refs, 1)))
         return prompts.OBSERVE_PROMPT.format(prev=prev, rules=rules, scene_hint=hint)
 
+    def hold(self, seconds: float) -> None:
+        """有人提问时让出模型：这段时间内暂缓观察（有紧急职责生效时不让，避免漏报）。"""
+        if any(getattr(r, "level", "") == "urgent" for r in self._watching()):
+            return
+        self._hold_until = max(self._hold_until, time.time() + seconds)
+
     async def step(self) -> TimelineEntry | None:
-        if self.paused:
+        if self.paused or time.time() < self._hold_until:
             return None
         frame = self.buffer.latest_frame()
         if frame is None or frame.ts == self._last_frame_ts:
@@ -121,7 +141,9 @@ class Observer:
             rid = hit.get("id") if isinstance(hit, dict) else str(hit)
             evidence = hit.get("evidence", "") if isinstance(hit, dict) else ""
             rule = self.rules.get(str(rid))
-            if rule and self.rules.mark_triggered(rule.id, now):
+            if rule and self.on_hit:
+                self.on_hit(rule.id, evidence, frame.ts, jpeg)
+            elif rule and self.rules.mark_triggered(rule.id, now):
                 self.bus.publish(TOPIC_ALERT, {"rule_id": rule.id, "condition": rule.condition,
                                                "evidence": evidence, "ts": frame.ts})
         return entry

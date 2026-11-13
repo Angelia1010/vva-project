@@ -34,6 +34,12 @@ class ChannelHost(Protocol):
     async def report(self, start: float, end: float) -> str:
         """生成一段时间的监控报告（基于长期记忆）。"""
 
+    def alert_image(self, rel: str) -> bytes | None:
+        """告警保存的截图（告警消息里的 image 字段），没有时返回 None。"""
+
+    def notify_result(self, alert_id: int | None, target: str, ok: bool, error: str = "") -> None:
+        """回报告警送达结果，记进告警的处理经过。"""
+
 
 class Channel(ABC):
     """一个接入入口。构造时只保存配置，start() 时才连接外部服务。"""
