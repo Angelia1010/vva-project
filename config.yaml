@@ -1,0 +1,73 @@
+# 2 × RTX 3090（24G）部署配置
+#   GPU0: Qwen3-VL-8B-Instruct  看图 + 智能体大脑   端口 8001
+#   GPU1: Qwen3-ASR-1.7B        语音识别             端口 8002
+#   GPU1: Qwen3-TTS-1.7B        语音合成             端口 8003
+# 模型服务由 scripts/models.sh 启动；端口需与 scripts/models.env 一致。
+# 用法：cp config.2x3090.yaml config.yaml && python main.py -c config.yaml --browser
+
+video:
+  type: push            # 浏览器测试模式（--browser 会自动设置）；接 RTSP 摄像头改为 stream
+  stream:
+    url: "rtsp://admin:password@192.168.1.64:554/Streaming/Channels/101"
+  buffer:
+    seconds: 60
+    fps: 2
+
+audio:
+  enabled: true
+  input: {type: push, sample_rate: 16000}
+  output: {type: push}
+
+voice:
+  mute_mic_while_speaking: true   # 浏览器外放时防止听到自己；戴耳机可改 false 以支持说话打断
+  wake_words: []
+
+models:
+  vlm:
+    base_url: "http://127.0.0.1:8001/v1"
+    api_key: "EMPTY"
+    model: "qwen3-vl-8b"          # 与 scripts/models.env 中 VLM_NAME 一致
+    bbox_format: "0-1000"         # Qwen3-VL 使用 0~1000 相对坐标
+    json_mode: true               # vLLM 支持 response_format=json_object，提高后台观察的 JSON 稳定性
+    max_tokens: 1024
+    temperature: 0.1
+
+  agent_llm:                      # 留空：复用上面的 VLM 作为智能体大脑
+    temperature: 0.3
+    stream: true
+
+  asr:
+    base_url: "http://127.0.0.1:8002/v1"
+    api_key: "EMPTY"
+    model: "qwen3-asr"            # 与 VLM 同理，对应 ASR_NAME
+    language: zh
+
+  tts:
+    base_url: "http://127.0.0.1:8003/v1"
+    api_key: "EMPTY"
+    model: "qwen3-tts"            # 对应 TTS_NAME
+    voice: "vivian"               # 可用音色：python scripts/check_models.py --voices
+    language: "Chinese"
+    response_format: pcm
+    sample_rate: 24000
+    stream: true
+    stream_format: audio          # 必须为 audio，否则 vLLM-Omni 返回 SSE 事件而非音频
+
+agent:
+  scene_hint: ""                  # 例如：“画面中笔记本电脑屏幕上有一块百分表，单位 mm”
+  look_max_side: 1024             # 8B 模型上下文有限，图片不宜过大
+  crop_min_side: 768
+  max_tool_rounds: 5
+
+observer:
+  enabled: true
+  interval: 5
+  image_side: 768
+  change_threshold: 6
+  max_idle: 30
+
+web:
+  host: 0.0.0.0
+  port: 8000
+  ssl_certfile: ""                # 远程访问浏览器测试页需要 HTTPS：填 certs/cert.pem
+  ssl_keyfile: ""                 #                                   certs/key.pem

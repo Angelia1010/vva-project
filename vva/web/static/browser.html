@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>浏览器测试 · 实时语音视频分析智能体</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --line:#e3e2dc; --text:#222; --muted:#777; --accent:#4b5bd6; --warn:#c2410c; --ok:#15803d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:12px 20px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
+  header h1 { font-size:17px; font-weight:600; margin:0; flex:1; min-width:220px; }
+  .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:#eee; color:var(--muted); }
+  .pill.on { background:#e7f6ec; color:var(--ok); }
+  .pill.busy { background:#eef0ff; color:var(--accent); }
+  .pill.hot { background:#fdeee6; color:var(--warn); }
+  main { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr); gap:16px; padding:16px; height:calc(100vh - 56px); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; flex-direction:column; min-height:0; }
+  .card h2 { font-size:14px; margin:0 0 8px; color:var(--muted); font-weight:600; }
+  .left { display:flex; flex-direction:column; gap:16px; min-height:0; }
+  .video-wrap { position:relative; background:#111; border-radius:8px; overflow:hidden; aspect-ratio:16/9; }
+  .video-wrap video { display:block; width:100%; height:100%; object-fit:contain; }
+  .video-wrap canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .video-wrap .placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:14px; }
+  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; font-size:13px; }
+  .meter { width:120px; height:8px; background:#eee; border-radius:4px; overflow:hidden; }
+  .meter div { height:100%; width:0; background:var(--ok); transition:width .08s; }
+  select, button { padding:7px 12px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; font-size:13px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.active { background:#e7f6ec; border-color:#9fd6b0; color:var(--ok); }
+  .list { overflow-y:auto; flex:1; font-size:13px; }
+  .tl-item { padding:6px 2px; border-bottom:1px dashed var(--line); }
+  .tl-item .t { color:var(--muted); margin-right:6px; font-variant-numeric:tabular-nums; }
+  .tl-item .anom { color:var(--warn); }
+  #chat { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px; padding:4px; }
+  .msg { max-width:88%; padding:8px 12px; border-radius:12px; line-height:1.55; font-size:14px; white-space:pre-wrap; }
+  .msg.user { align-self:flex-end; background:var(--accent); color:#fff; }
+  .msg.bot { align-self:flex-start; background:#f0f0ec; }
+  .msg.sys { align-self:center; background:#fdeee6; color:var(--warn); font-size:13px; }
+  .msg .src { font-size:11px; opacity:.75; margin-bottom:2px; }
+  .tool { align-self:flex-start; font-size:12px; color:var(--muted); padding-left:6px; }
+  form { display:flex; gap:8px; margin-top:10px; }
+  input[type=text] { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  #rules { font-size:13px; color:var(--muted); margin-top:8px; }
+  #notice { display:none; background:#fff7e6; border:1px solid #f3d19e; color:#8a5a00; padding:10px 14px; margin:12px 16px 0; border-radius:8px; font-size:13px; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; height:auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>浏览器测试 · 实时语音视频分析智能体</h1>
+  <span id="pill-conn" class="pill">未连接</span>
+  <span id="pill-cam" class="pill">摄像头关闭</span>
+  <span id="pill-mic" class="pill">麦克风关闭</span>
+  <span id="pill-state" class="pill">空闲</span>
+</header>
+<div id="notice"></div>
+<main>
+  <section class="left">
+    <div class="card" style="flex:0 0 auto">
+      <div class="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="placeholder" class="placeholder">点击下方“开启摄像头”</div>
+      </div>
+      <div class="controls">
+        <button id="btn-cam" class="primary">开启摄像头</button>
+        <select id="sel-cam" title="选择摄像头"></select>
+        <label>上传频率
+          <select id="sel-fps">
+            <option value="1">1 帧/秒</option>
+            <option value="2" selected>2 帧/秒</option>
+            <option value="5">5 帧/秒</option>
+          </select>
+        </label>
+        <span style="flex:1"></span>
+        <button id="btn-mic" class="primary">开启麦克风</button>
+        <div class="meter" title="麦克风音量"><div id="meter"></div></div>
+      </div>
+    </div>
+    <div class="card" style="flex:1">
+      <h2>画面时间线（后台观察）</h2>
+      <div id="timeline" class="list"></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>对话（可直接说话，也可打字）</h2>
+    <div id="chat"></div>
+    <div id="rules"></div>
+    <form id="form">
+      <input id="input" type="text" placeholder="例如：画面里有几个人？表上读数是多少？有人离开就提醒我" autocomplete="off">
+      <button class="primary" type="submit">发送</button>
+    </form>
+    <div class="controls">
+      <button id="btn-stop" type="button">打断</button>
+      <button id="btn-reset" type="button">清空对话</button>
+      <span style="flex:1"></span>
+      <a href="/" style="font-size:12px;color:var(--muted)">服务端摄像头页面</a>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+const chat = $("chat"), tl = $("timeline"), video = $("video"), overlay = $("overlay");
+let caps = {}, ws = null, botMsg = null, boxes = [], boxTimer = null;
+
+// ============================================================ 通用界面
+function pill(id, text, cls) { const el = $(id); el.textContent = text; el.className = "pill " + (cls || ""); }
+function scroll(el) { el.scrollTop = el.scrollHeight; }
+function addMsg(cls, text, src) {
+  const d = document.createElement("div"); d.className = "msg " + cls;
+  if (src) { const s = document.createElement("div"); s.className = "src"; s.textContent = src; d.appendChild(s); }
+  const body = document.createElement("span"); body.textContent = text || ""; d.appendChild(body);
+  chat.appendChild(d); scroll(chat); return body;
+}
+const TOOL_NAMES = {look_now:"看当前画面", locate:"定位目标", look_back:"回看", look_sequence:"看一段时间",
+  search_timeline:"查时间线", add_watch:"添加监控", list_watches:"查看监控", remove_watch:"删除监控"};
+function addTool(name, args) {
+  const d = document.createElement("div"); d.className = "tool";
+  d.textContent = "🔧 " + (TOOL_NAMES[name] || name) + " " + JSON.stringify(args);
+  chat.appendChild(d); scroll(chat);
+}
+function addTimeline(e) {
+  const d = document.createElement("div"); d.className = "tl-item";
+  const t = document.createElement("span"); t.className = "t"; t.textContent = e.time;
+  const s = document.createElement("span"); s.textContent = e.summary + (e.people_count != null ? `（${e.people_count}人）` : "");
+  d.append(t, s);
+  if (e.anomalies && e.anomalies.length) { const a = document.createElement("div"); a.className = "anom"; a.textContent = "异常：" + e.anomalies.join("、"); d.appendChild(a); }
+  tl.prepend(d); while (tl.children.length > 200) tl.removeChild(tl.lastChild);
+}
+function renderRules(rules) {
+  $("rules").textContent = rules && rules.length ? "监控中：" + rules.map(r => `${r.id} ${r.condition}`).join("；") : "";
+}
+function notice(text) { const n = $("notice"); n.textContent = text; n.style.display = text ? "block" : "none"; }
+
+// 在视频上画框：框坐标是相对原始画面的 0~1，需换算到 object-fit:contain 后的显示区域
+function drawBoxes() {
+  const W = overlay.clientWidth, H = overlay.clientHeight;
+  overlay.width = W; overlay.height = H;
+  const ctx = overlay.getContext("2d"); ctx.clearRect(0, 0, W, H);
+  const srv = $("server-video");   // 服务端视频源（RTSP 等）模式下显示的画面
+  const vw = srv ? srv.naturalWidth : video.videoWidth, vh = srv ? srv.naturalHeight : video.videoHeight;
+  if (!vw || !boxes.length) return;
+  const s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
+  ctx.lineWidth = 3; ctx.strokeStyle = "#ffcc00"; ctx.fillStyle = "#ffcc00"; ctx.font = "14px sans-serif";
+  for (const b of boxes) {
+    const [x1, y1, x2, y2] = b.box;
+    ctx.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh);
+    if (b.label) ctx.fillText(b.label, ox + x1 * dw + 4, Math.max(14, oy + y1 * dh - 6));
+  }
+}
+function showBoxes(list) {
+  boxes = list || []; drawBoxes();
+  clearTimeout(boxTimer); boxTimer = setTimeout(() => { boxes = []; drawBoxes(); }, 8000);
+}
+window.addEventListener("resize", drawBoxes);
+
+// ============================================================ 对话通道 /ws
+function handle(ev) {
+  switch (ev.type) {
+    case "hello": tl.innerHTML = ""; (ev.timeline || []).forEach(addTimeline); renderRules(ev.status.rules); break;
+    case "user": addMsg("user", ev.text, ev.source === "voice" ? "🎤 语音" : ""); botMsg = null; break;
+    case "assistant_start": botMsg = addMsg("bot", ""); pill("pill-state", "思考中…", "busy"); break;
+    case "assistant_delta": if (!botMsg) botMsg = addMsg("bot", ""); botMsg.textContent += ev.text; scroll(chat); break;
+    case "assistant_end":
+      if (ev.interrupted && botMsg) botMsg.textContent += " …（已打断）";
+      botMsg = null; pill("pill-state", "空闲"); break;
+    case "tool": addTool(ev.name, ev.args); botMsg = null; break;
+    case "timeline": addTimeline(ev); break;
+    case "alert": addMsg("sys", "🔔 " + ev.text); break;
+    case "rules": renderRules(ev.rules); break;
+    case "bbox": showBoxes(ev.boxes); break;
+    case "vad": if (ev.state === "start") pill("pill-state", "正在听…", "hot"); else pill("pill-state", "识别中…", "busy"); break;
+    case "tts": if (ev.state === "speaking") pill("pill-state", "正在说…", "busy"); else pill("pill-state", "空闲"); break;
+    case "asr": if (ev.ignored) addMsg("sys", "（未唤醒，已忽略）" + ev.text); break;
+    case "error": addMsg("sys", "⚠️ " + ev.message); break;
+  }
+}
+function connectChat() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => pill("pill-conn", "已连接", "on");
+  ws.onclose = () => { pill("pill-conn", "已断开，重连中", "hot"); setTimeout(connectChat, 2000); };
+  ws.onmessage = (m) => handle(JSON.parse(m.data));
+}
+$("form").onsubmit = (e) => {
+  e.preventDefault(); const t = $("input").value.trim();
+  if (!t || !ws || ws.readyState !== 1) return;
+  ensurePlayer();   // 用户点击时顺便激活声音播放
+  ws.send(JSON.stringify({type: "chat", text: t})); $("input").value = "";
+};
+$("btn-stop").onclick = () => { ws && ws.send(JSON.stringify({type: "interrupt"})); stopPlayback(); };
+$("btn-reset").onclick = () => { ws && ws.send(JSON.stringify({type: "reset"})); chat.innerHTML = ""; stopPlayback(); };
+
+// ============================================================ 摄像头：本地预览 + 定时上传 JPEG
+let camStream = null, frameTimer = null, uploading = false;
+const grab = document.createElement("canvas");
+
+async function listCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  const sel = $("sel-cam"), cur = sel.value; sel.innerHTML = "";
+  devs.forEach((d, i) => { const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || `摄像头 ${i + 1}`; sel.appendChild(o); });
+  if (cur) sel.value = cur;
+}
+async function startCamera() {
+  stopCamera();
+  const id = $("sel-cam").value;
+  camStream = await navigator.mediaDevices.getUserMedia({
+    video: { width: {ideal: 1280}, height: {ideal: 720}, ...(id ? {deviceId: {exact: id}} : {}) }, audio: false });
+  video.srcObject = camStream; $("placeholder").style.display = "none";
+  await listCameras();
+  $("btn-cam").textContent = "关闭摄像头"; $("btn-cam").className = "active";
+  pill("pill-cam", "摄像头上传中", "on");
+  restartUpload();
+}
+function stopCamera() {
+  clearInterval(frameTimer); frameTimer = null;
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null; video.srcObject = null; $("placeholder").style.display = "flex";
+  $("btn-cam").textContent = "开启摄像头"; $("btn-cam").className = "primary";
+  pill("pill-cam", "摄像头关闭");
+}
+function restartUpload() {
+  clearInterval(frameTimer);
+  if (!camStream) return;
+  frameTimer = setInterval(uploadFrame, 1000 / Number($("sel-fps").value));
+}
+async function uploadFrame() {
+  if (uploading || !video.videoWidth) return;    // 上一帧还没传完就跳过，避免积压
+  uploading = true;
+  try {
+    grab.width = video.videoWidth; grab.height = video.videoHeight;
+    grab.getContext("2d").drawImage(video, 0, 0);
+    const blob = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.85));
+    const res = await fetch("/api/ingest/frame", { method: "POST", body: blob,
+      headers: { "Content-Type": "image/jpeg", "X-Timestamp": String(Date.now() / 1000), "X-Token": TOKEN } });
+    if (!res.ok) pill("pill-cam", "上传失败 " + res.status, "hot");
+  } catch (e) { pill("pill-cam", "上传失败", "hot"); }
+  finally { uploading = false; }
+}
+$("btn-cam").onclick = async () => {
+  if (camStream) return stopCamera();
+  try { await startCamera(); } catch (e) { notice("无法打开摄像头：" + e.message + "（请允许浏览器使用摄像头）"); }
+};
+$("sel-cam").onchange = () => camStream && startCamera();
+$("sel-fps").onchange = restartUpload;
+
+// ============================================================ 麦克风：采集 → 16k PCM16 → WebSocket；接收语音并播放
+let micStream = null, micCtx = null, micNode = null, audioWs = null;
+let inRate = 16000, outRate = 24000, resampleBuf = [], resamplePos = 0, sendBuf = [];
+let playCtx = null, playTime = 0, playing = new Set();
+
+const WORKLET = `class Cap extends AudioWorkletProcessor {
+  process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; }
+} registerProcessor("cap", Cap);`;
+
+function ensurePlayer() {
+  if (!playCtx) playCtx = new AudioContext();
+  if (playCtx.state === "suspended") playCtx.resume();
+}
+function playPcm(arrayBuf) {
+  ensurePlayer();
+  const pcm = new Int16Array(arrayBuf);
+  if (!pcm.length) return;
+  const buf = playCtx.createBuffer(1, pcm.length, outRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+  const src = playCtx.createBufferSource(); src.buffer = buf; src.connect(playCtx.destination);
+  playTime = Math.max(playTime, playCtx.currentTime + 0.05);
+  src.start(playTime); playTime += buf.duration;
+  playing.add(src); src.onended = () => playing.delete(src);
+}
+function stopPlayback() {
+  playing.forEach(s => { try { s.stop(); } catch (e) {} }); playing.clear();
+  playTime = 0;
+}
+
+// 浏览器采样率（通常 48k）线性插值降到服务端需要的采样率
+function resampleTo(input, srcRate, dstRate) {
+  for (const v of input) resampleBuf.push(v);
+  const ratio = srcRate / dstRate, out = [];
+  let pos = resamplePos;   // 保留上一块的小数位置，块与块之间无缝衔接
+  while (pos + 1 < resampleBuf.length) {
+    const i = Math.floor(pos), f = pos - i;
+    out.push(resampleBuf[i] * (1 - f) + resampleBuf[i + 1] * f);
+    pos += ratio;
+  }
+  const drop = Math.min(Math.floor(pos), resampleBuf.length);
+  resampleBuf = resampleBuf.slice(drop);
+  resamplePos = pos - drop;
+  return out;
+}
+
+function connectAudio() {
+  return new Promise((resolve, reject) => {
+    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/ingest/audio" + (TOKEN ? "?token=" + TOKEN : "");
+    audioWs = new WebSocket(url); audioWs.binaryType = "arraybuffer";
+    let ready = false;
+    audioWs.onmessage = (m) => {
+      if (typeof m.data === "string") {
+        const msg = JSON.parse(m.data);
+        if (msg.type === "config") {
+          inRate = msg.input_sample_rate || 16000; outRate = msg.output_sample_rate || 24000;
+          ready = true; resolve();
+        } else if (msg.type === "clear") stopPlayback();
+      } else playPcm(m.data);
+    };
+    audioWs.onerror = () => { if (!ready) reject(new Error("语音通道连接失败")); };
+    audioWs.onclose = () => { if (micStream) { pill("pill-mic", "语音通道断开", "hot"); stopMic(); } };
+  });
+}
+async function startMic() {
+  ensurePlayer();
+  await connectAudio();
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  micCtx = new AudioContext();
+  await micCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], {type: "application/javascript"})));
+  const src = micCtx.createMediaStreamSource(micStream);
+  micNode = new AudioWorkletNode(micCtx, "cap");
+  resampleBuf = []; resamplePos = 0; sendBuf = [];
+  const chunk = Math.round(inRate * 0.04);   // 每 40ms 发送一包
+  micNode.port.onmessage = (e) => {
+    const data = e.data;
+    let sum = 0; for (const v of data) sum += v * v;
+    $("meter").style.width = Math.min(100, Math.sqrt(sum / data.length) * 400) + "%";
+    for (const v of resampleTo(data, micCtx.sampleRate, inRate)) sendBuf.push(v);
+    while (sendBuf.length >= chunk) {
+      const part = sendBuf.splice(0, chunk), pcm = new Int16Array(chunk);
+      for (let i = 0; i < chunk; i++) pcm[i] = Math.max(-1, Math.min(1, part[i])) * 32767;
+      if (audioWs && audioWs.readyState === 1) audioWs.send(pcm.buffer);
+    }
+  };
+  src.connect(micNode);   // 不连接到扬声器，避免回放自己的声音
+  $("btn-mic").textContent = "关闭麦克风"; $("btn-mic").className = "active";
+  pill("pill-mic", "麦克风已开启", "on");
+}
+function stopMic() {
+  if (micNode) micNode.disconnect();
+  if (micCtx) micCtx.close();
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  micNode = micCtx = micStream = null;
+  $("meter").style.width = "0";
+  $("btn-mic").textContent = "开启麦克风"; $("btn-mic").className = "primary";
+  if (audioWs && audioWs.readyState <= 1) { const w = audioWs; audioWs = null; w.close(); }
+  pill("pill-mic", "麦克风关闭");
+}
+$("btn-mic").onclick = async () => {
+  if (micStream) return stopMic();
+  try { await startMic(); }
+  catch (e) { stopMic(); notice("无法开启语音：" + e.message); }
+};
+
+// ============================================================ 启动检查
+(async () => {
+  const tips = [];
+  if (!navigator.mediaDevices) {
+    tips.push("当前页面无法使用摄像头/麦克风：请通过 localhost（可用 SSH 端口转发）或 HTTPS 访问，见 DEPLOY_LINUX.md");
+  }
+  try {
+    caps = await (await fetch("/api/capabilities")).json();
+    if (!caps.video_push) {
+      // 视频来自服务端（RTSP 摄像头等）：显示服务端画面，麦克风照常可用
+      const img = document.createElement("img");
+      img.id = "server-video"; img.src = "/video.mjpg"; img.alt = "服务端画面";
+      img.style.cssText = "display:block;width:100%;height:100%;object-fit:contain";
+      img.onload = drawBoxes;
+      img.onerror = () => setTimeout(() => { img.src = "/video.mjpg?t=" + Date.now(); }, 2000);
+      video.replaceWith(img);
+      $("placeholder").style.display = "none";
+      for (const id of ["btn-cam", "sel-cam", "sel-fps"]) $(id).style.display = "none";
+      pill("pill-cam", "服务端摄像头", "on");
+    }
+    if (!caps.audio_in_push) {
+      $("btn-mic").disabled = true;
+      tips.push(caps.voice ? "语音由服务器本机麦克风采集，网页麦克风不可用"
+                           : "语音未开启（--no-audio 或语音模块启动失败），可以打字提问");
+    }
+  } catch (e) { tips.push("无法连接服务端"); }
+  notice(tips.join("；"));
+  try { await listCameras(); } catch (e) {}
+  connectChat();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+# 复制为 config.yaml 后修改。未写的项使用默认值（见 vva/core/config.py）。
+# 支持 ${环境变量} 和 ${环境变量:-默认值}。
+
+# ---------------------------------------------------------------- 视频接入
+video:
+  # local  电脑摄像头（本地测试）
+  # stream RTSP / HTTP / 视频文件
+  # push   外部程序通过 POST /api/ingest/frame 推送 JPEG
+  # custom 自定义引擎插件（继承 vva.video.base.VideoSource）
+  type: local
+  source_id: cam0
+
+  local:
+    index: 0            # 摄像头编号，可用 python main.py --probe-cameras 查看
+    width: 1280
+    height: 720
+    fps: 15
+    backend: null       # Windows 打开慢可设为 dshow；macOS: avfoundation；Linux: v4l2
+
+  stream:
+    url: "rtsp://admin:password@192.168.1.64:554/Streaming/Channels/101"
+    rtsp_transport: tcp
+    loop: false         # url 为本地视频文件时，是否循环播放
+
+  custom:
+    class: "examples/custom_video_source.py:TestPatternSource"
+    params: {}
+
+  buffer:
+    seconds: 60         # 帧缓存时长，决定能“回看”多久
+    fps: 2              # 缓存抽帧频率
+    jpeg_quality: 85
+    max_side: 1920
+
+# ---------------------------------------------------------------- 音频接入
+audio:
+  enabled: true
+  input:
+    type: local         # local 电脑麦克风 | push 外部 WebSocket 推流 | custom 自定义
+    sample_rate: 16000
+    device: null        # 设备编号或名称，python main.py --list-devices 查看
+  output:
+    type: local         # local 电脑扬声器 | push 通过 WebSocket 发给外部 | none | custom
+    device: null
+
+vad:
+  threshold_db: -45     # 环境较吵可调高到 -38 左右
+  end_silence_ms: 700   # 停顿多久算说完
+  max_utterance_s: 15
+
+voice:
+  # 用电脑外放测试时，扬声器的声音会被麦克风收进去，建议保持 true（播放时不收音）。
+  # 戴耳机或使用带回声消除的设备时可设为 false，此时支持“说话即打断”。
+  mute_mic_while_speaking: true
+  barge_in: true
+  wake_words: []        # 例如 ["小智"]；为空则不需要唤醒词
+  wake_timeout: 30      # 唤醒后多少秒内不用再说唤醒词
+
+# ---------------------------------------------------------------- 模型（OpenAI 兼容接口）
+# asr / tts / agent_llm 未填写 base_url、api_key 时自动沿用 vlm 的配置；
+# agent_llm 未填写 model 时沿用 vlm 的 model（用同一个多模态模型当大脑）。
+models:
+  vlm:
+    base_url: "http://127.0.0.1:8001/v1"
+    api_key: "${VLM_API_KEY:-EMPTY}"
+    model: "your-vl-model"
+    max_image_side: 1280
+    # 定位框坐标格式：0-1000（Qwen3-VL、Gemini 等）| 0-1 | pixel（Qwen2.5-VL）
+    bbox_format: "0-1000"
+    json_mode: false    # 服务支持 response_format=json_object 时可打开
+    # 推理模型可关闭思考以降低延迟，例如 vLLM 部署的 Qwen3 系列：
+    # extra_body: {chat_template_kwargs: {enable_thinking: false}}
+
+  agent_llm:
+    base_url: ""        # 留空沿用 vlm
+    model: ""           # 留空沿用 vlm；也可换成更快的纯文本模型（需支持函数调用）
+    temperature: 0.3
+    stream: true
+
+  asr:
+    base_url: "http://127.0.0.1:8002/v1"
+    model: "your-asr-model"
+    language: zh
+    prompt: ""          # 可填热词、专有名词，提升识别准确率
+
+  tts:
+    base_url: "http://127.0.0.1:8003/v1"
+    model: "your-tts-model"
+    voice: "alloy"
+    response_format: pcm   # pcm（流式，推荐）| wav
+    sample_rate: 24000     # 必须与服务返回的 PCM 采样率一致
+
+# ---------------------------------------------------------------- 智能体与后台观察
+agent:
+  scene_hint: ""        # 场景说明，例如“这是实验室，桌上的笔记本电脑屏幕显示一块百分表”
+  filler_text: "我看一下。"
+  max_tool_rounds: 6
+  max_history_turns: 8
+
+observer:
+  enabled: true
+  interval: 4           # 每隔几秒检查一次画面
+  change_threshold: 6   # 画面变化超过该值才调用大模型（0~255 的平均灰度差）
+  max_idle: 30          # 画面不变时，最长多久强制记录一次
+  rule_check_interval: 8  # 有监控规则时，最长多久判断一次
+
+web:
+  host: 0.0.0.0
+  port: 8000
+  ingest_token: ""      # 设置后，外部推流需带 X-Token 请求头（音频 WebSocket 用 ?token=）

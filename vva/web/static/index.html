@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>实时语音视频分析智能体</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --line:#e3e2dc; --text:#222; --muted:#777; --accent:#4b5bd6; --warn:#c2410c; --ok:#15803d; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:12px 20px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--line); background:var(--card); }
+  header h1 { font-size:17px; font-weight:600; margin:0; flex:1; }
+  .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:#eee; color:var(--muted); }
+  .pill.on { background:#e7f6ec; color:var(--ok); }
+  .pill.busy { background:#eef0ff; color:var(--accent); }
+  .pill.hot { background:#fdeee6; color:var(--warn); }
+  main { display:grid; grid-template-columns: minmax(0,1.5fr) minmax(340px,1fr); gap:16px; padding:16px; height:calc(100vh - 54px); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; flex-direction:column; min-height:0; }
+  .card h2 { font-size:14px; margin:0 0 8px; color:var(--muted); font-weight:600; }
+  .left { display:flex; flex-direction:column; gap:16px; min-height:0; }
+  .video-wrap { position:relative; background:#111; border-radius:8px; overflow:hidden; }
+  .video-wrap img { display:block; width:100%; height:auto; }
+  .video-wrap canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .list { overflow-y:auto; flex:1; font-size:13px; }
+  .tl-item { padding:6px 2px; border-bottom:1px dashed var(--line); }
+  .tl-item .t { color:var(--muted); margin-right:6px; font-variant-numeric: tabular-nums; }
+  .tl-item .anom { color:var(--warn); }
+  #chat { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px; padding:4px; }
+  .msg { max-width:88%; padding:8px 12px; border-radius:12px; line-height:1.55; font-size:14px; white-space:pre-wrap; }
+  .msg.user { align-self:flex-end; background:var(--accent); color:#fff; }
+  .msg.bot { align-self:flex-start; background:#f0f0ec; }
+  .msg.alert { align-self:center; background:#fdeee6; color:var(--warn); font-size:13px; }
+  .msg .src { font-size:11px; opacity:.7; margin-bottom:2px; }
+  .tool { align-self:flex-start; font-size:12px; color:var(--muted); padding-left:6px; }
+  form { display:flex; gap:8px; margin-top:10px; }
+  input[type=text] { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  button { padding:8px 14px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; font-size:13px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .row { display:flex; gap:8px; align-items:center; }
+  #rules { font-size:13px; color:var(--muted); margin-top:8px; }
+  @media (max-width: 900px) { main { grid-template-columns:1fr; height:auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>实时语音视频分析智能体</h1>
+  <a href="/browser" style="font-size:12px;color:var(--muted)">浏览器测试页</a>
+  <span id="pill-conn" class="pill">未连接</span>
+  <span id="pill-voice" class="pill">语音关闭</span>
+  <span id="pill-vad" class="pill">静音</span>
+</header>
+<main>
+  <section class="left">
+    <div class="card" style="flex:0 0 auto">
+      <div class="video-wrap">
+        <img id="video" src="/video.mjpg" alt="实时画面">
+        <canvas id="overlay"></canvas>
+      </div>
+    </div>
+    <div class="card" style="flex:1">
+      <h2>画面时间线（后台观察）</h2>
+      <div id="timeline" class="list"></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>对话</h2>
+    <div id="chat"></div>
+    <div id="rules"></div>
+    <form id="form">
+      <input id="input" type="text" placeholder="输入问题，例如：表上现在读数是多少？" autocomplete="off">
+      <button class="primary" type="submit">发送</button>
+    </form>
+    <div class="row" style="margin-top:8px">
+      <button id="btn-stop" type="button">打断</button>
+      <button id="btn-reset" type="button">清空对话</button>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const chat = $("chat"), tl = $("timeline"), canvas = $("overlay"), img = $("video");
+let ws, botMsg = null, boxes = [], boxTimer = null;
+
+function setPill(id, text, cls) { const el = $(id); el.textContent = text; el.className = "pill " + (cls || ""); }
+function scroll(el) { el.scrollTop = el.scrollHeight; }
+function addMsg(cls, text, src) {
+  const d = document.createElement("div"); d.className = "msg " + cls;
+  if (src) { const s = document.createElement("div"); s.className = "src"; s.textContent = src; d.appendChild(s); }
+  const body = document.createElement("span"); body.textContent = text || ""; d.appendChild(body);
+  chat.appendChild(d); scroll(chat); return body;
+}
+function addTool(name, args) {
+  const names = {look_now:"看当前画面", locate:"定位目标", look_back:"回看", look_sequence:"看一段时间",
+                 search_timeline:"查时间线", add_watch:"添加监控", list_watches:"查看监控", remove_watch:"删除监控"};
+  const d = document.createElement("div"); d.className = "tool";
+  d.textContent = "🔧 " + (names[name] || name) + " " + JSON.stringify(args);
+  chat.appendChild(d); scroll(chat);
+}
+function addTimeline(e) {
+  const d = document.createElement("div"); d.className = "tl-item";
+  let html = `<span class="t">${e.time}</span>`;
+  const span = document.createElement("span"); span.textContent = e.summary + (e.people_count != null ? `（${e.people_count}人）` : "");
+  d.innerHTML = html; d.appendChild(span);
+  if (e.anomalies && e.anomalies.length) { const a = document.createElement("div"); a.className = "anom"; a.textContent = "异常：" + e.anomalies.join("、"); d.appendChild(a); }
+  tl.prepend(d);
+  while (tl.children.length > 200) tl.removeChild(tl.lastChild);
+}
+function renderRules(rules) {
+  $("rules").textContent = rules && rules.length ? "监控中：" + rules.map(r => `${r.id} ${r.condition}`).join("；") : "";
+}
+function drawBoxes() {
+  const w = img.clientWidth, h = img.clientHeight;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d"); ctx.clearRect(0, 0, w, h);
+  ctx.lineWidth = 3; ctx.strokeStyle = "#ffcc00"; ctx.fillStyle = "#ffcc00"; ctx.font = "14px sans-serif";
+  for (const b of boxes) {
+    const [x1, y1, x2, y2] = b.box;
+    ctx.strokeRect(x1 * w, y1 * h, (x2 - x1) * w, (y2 - y1) * h);
+    if (b.label) ctx.fillText(b.label, x1 * w + 4, Math.max(14, y1 * h - 6));
+  }
+}
+function showBoxes(list) {
+  boxes = list || []; drawBoxes();
+  clearTimeout(boxTimer); boxTimer = setTimeout(() => { boxes = []; drawBoxes(); }, 8000);
+}
+window.addEventListener("resize", drawBoxes);
+
+function handle(ev) {
+  switch (ev.type) {
+    case "hello":
+      setPill("pill-voice", ev.status.voice ? "语音已开启" : "语音关闭", ev.status.voice ? "on" : "");
+      tl.innerHTML = ""; (ev.timeline || []).forEach(addTimeline); renderRules(ev.status.rules); break;
+    case "user": addMsg("user", ev.text, ev.source === "voice" ? "🎤 语音" : ""); botMsg = null; break;
+    case "assistant_start": botMsg = addMsg("bot", ""); break;
+    case "assistant_delta": if (!botMsg) botMsg = addMsg("bot", ""); botMsg.textContent += ev.text; scroll(chat); break;
+    case "assistant_end": if (ev.interrupted && botMsg) botMsg.textContent += " …（已打断）"; botMsg = null; break;
+    case "tool": addTool(ev.name, ev.args); botMsg = null; break;
+    case "timeline": addTimeline(ev); break;
+    case "alert": addMsg("alert", "🔔 " + ev.text); break;
+    case "rules": renderRules(ev.rules); break;
+    case "bbox": showBoxes(ev.boxes); break;
+    case "vad": setPill("pill-vad", ev.state === "start" ? "正在听…" : "静音", ev.state === "start" ? "hot" : ""); break;
+    case "tts": setPill("pill-vad", ev.state === "speaking" ? "正在说…" : "静音", ev.state === "speaking" ? "busy" : ""); break;
+    case "asr": if (ev.ignored) addMsg("alert", "（未唤醒，已忽略）" + ev.text); break;
+    case "error": addMsg("alert", "⚠️ " + ev.message); break;
+  }
+}
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => setPill("pill-conn", "已连接", "on");
+  ws.onclose = () => { setPill("pill-conn", "已断开，重连中", "hot"); setTimeout(connect, 2000); };
+  ws.onmessage = (m) => handle(JSON.parse(m.data));
+}
+$("form").onsubmit = (e) => {
+  e.preventDefault(); const t = $("input").value.trim();
+  if (!t || !ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({type: "chat", text: t})); $("input").value = "";
+};
+$("btn-stop").onclick = () => ws && ws.send(JSON.stringify({type: "interrupt"}));
+$("btn-reset").onclick = () => { ws && ws.send(JSON.stringify({type: "reset"})); chat.innerHTML = ""; };
+img.onerror = () => setTimeout(() => { img.src = "/video.mjpg?t=" + Date.now(); }, 2000);
+connect();
+</script>
+</body>
+</html>
