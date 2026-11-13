@@ -105,6 +105,18 @@ def test_chat_required_falls_back_to_auto(fake):
     assert seen == ["required", "auto", "auto"]          # 不支持时只试一次，之后直接用 auto
 
 
+def test_embedding_batches(monkeypatch):
+    seen = []
+
+    async def create(model, input, **kw):
+        seen.append(list(input))
+        return NS(data=[NS(index=i, embedding=[float(len(t))]) for i, t in reversed(list(enumerate(input)))])
+    monkeypatch.setattr(clients, "_make_client", lambda cfg: NS(embeddings=NS(create=create)))
+    m = clients.EmbeddingModel({"model": "e", "base_url": "u", "batch_size": 2})
+    out = asyncio.run(m.embed(["a", "bb", "ccc"]))
+    assert out == [[1.0], [2.0], [3.0]] and seen == [["a", "bb"], ["ccc"]]     # 分批，并按 index 还原顺序
+
+
 def test_vision_request(fake):
     fake["chat"] = lambda kw: NS(choices=[NS(message=NS(content="答案", tool_calls=None))])
     v = clients.VisionModel({"model": "vl", "base_url": "u", "json_mode": True})

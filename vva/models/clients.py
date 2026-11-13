@@ -129,6 +129,24 @@ class VisionModel:
         return resp.choices[0].message.content or ""
 
 
+class EmbeddingModel:
+    """/v1/embeddings，知识库向量检索使用（可选）。"""
+
+    def __init__(self, cfg: dict[str, Any]) -> None:
+        self.cfg = cfg
+        self.model = cfg["model"]
+        self.batch = int(cfg.get("batch_size") or 32)
+        self.client = _make_client(cfg)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        out: list[list[float]] = []
+        for i in range(0, len(texts), self.batch):
+            resp = await self.client.embeddings.create(model=self.model, input=texts[i:i + self.batch],
+                                                       **_extra(self.cfg))
+            out += [d.embedding for d in sorted(resp.data, key=lambda d: d.index)]
+        return out
+
+
 class SpeechToText:
     def __init__(self, cfg: dict[str, Any]) -> None:
         self.cfg = cfg
