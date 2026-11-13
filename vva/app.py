@@ -3,6 +3,7 @@
 各模块之间只通过接口和事件总线连接：
   视频源 ──帧──▶ 帧缓存 ◀── 工具 / 后台观察 ──▶ 多模态大模型
   语音会话 ──文字──▶ App.handle_user_text ──▶ 智能体 ──文字──▶ 语音会话 / 网页
+  后台观察 / 提醒 / 指令 ──事件──▶ 长期记忆（SQLite + 关键帧）◀── 记忆工具
 """
 from __future__ import annotations
 
@@ -12,13 +13,14 @@ import logging
 from typing import Any
 
 from vva.agent.agent import Agent
+from vva.agent.toolkit import ToolSet
 from vva.agent.tools import VisionTools
 from vva.core.bus import TOPIC_ALERT, TOPIC_UI, EventBus
 from vva.perception.observer import Observer
 from vva.perception.timeline import Timeline, WatchRules
 from vva.video.factory import create_video_source
 from vva.video.frame_buffer import FrameBuffer
-from vva.voice.text_split import SentenceSplitter, ThinkFilter
+from vva.voice.text_split import AnswerLimiter, SentenceSplitter, ThinkFilter
 
 log = logging.getLogger(__name__)
 
@@ -44,8 +46,18 @@ class App:
         # 感知 + 智能体
         self.timeline = Timeline(cfg["observer"]["timeline_minutes"])
         self.rules = WatchRules()
-        self.tools = VisionTools(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
-        self.agent = Agent(self.llm, self.tools, **cfg["agent"])
+        vision_tools = VisionTools(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
+
+        # 长期记忆（可关闭）
+        self.memory = None
+        if cfg["memory"].get("enabled", True):
+            from vva.memory import LongTermMemory
+            mem_cfg = {"look_max_tokens": cfg["agent"]["look_max_tokens"], **cfg["memory"]}
+            self.memory = LongTermMemory(mem_cfg, self.bus, self.llm, self.vlm)
+            self.memory.attach_rules(self.rules)
+        self.tools = ToolSet(vision_tools, self.memory.tools if self.memory else None)
+        self.agent = Agent(self.llm, self.tools, **cfg["agent"],
+                           notes_provider=self.memory.tools.note_lines if self.memory else None)
         obs_cfg = dict(cfg["observer"])
         if not obs_cfg.get("scene_hint"):
             obs_cfg["scene_hint"] = cfg["agent"].get("scene_hint", "")
@@ -80,6 +92,8 @@ class App:
         if self.observer:
             self._tasks.append(asyncio.create_task(self.observer.run(), name="observer"))
         self._tasks.append(asyncio.create_task(self._alert_loop(), name="alerts"))
+        if self.memory:
+            self._tasks += [asyncio.create_task(c) for c in self.memory.background_tasks()]
         if self.voice:
             try:
                 await self.voice.start()
@@ -94,6 +108,8 @@ class App:
         if self.voice:
             await self.voice.stop()
         self.video.stop()
+        if self.memory:
+            await self.memory.close()
 
     # ---------------------------------------------------------------- 对话
     @property
@@ -123,10 +139,11 @@ class App:
 
     async def _run_turn(self, text: str, speak: bool) -> None:
         splitter, think = SentenceSplitter(), ThinkFilter()
+        limiter = AnswerLimiter(self.cfg["agent"].get("max_answer_chars", 0))
         self.bus.publish(TOPIC_UI, {"type": "assistant_start"})
 
         def on_text(delta: str) -> None:
-            visible = think.feed(delta)
+            visible = limiter.feed(think.feed(delta))
             if not visible:
                 return
             self.bus.publish(TOPIC_UI, {"type": "assistant_delta", "text": visible})
@@ -173,5 +190,7 @@ class App:
             "busy": self.busy,
             "observer": self.observer is not None,
             "timeline_entries": len(self.timeline),
+            "memory": self.memory.stats() if self.memory else None,
+            "voice_mode": self.voice.mode if self.voice else None,
             "rules": [r.to_dict() for r in self.rules.list()],
         }

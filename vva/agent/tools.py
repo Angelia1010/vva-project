@@ -1,15 +1,15 @@
-"""智能体可调用的视觉工具。每个工具返回 JSON 字符串给大模型。
+"""智能体可调用的视觉工具：看当前/过去画面、定位、查短期时间线、监控提醒。
 
-新增工具：在 schemas() 中加一个定义，并实现同名的 async 方法即可。
+新增工具：在 schemas() 中加一个定义，并实现同名的 `tool_<name>` 异步方法即可。
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
 
 from vva.agent import prompts
+from vva.agent.toolkit import ToolProvider, fn_schema as _fn
 from vva.core.bus import TOPIC_UI, EventBus
 from vva.core.jsonutil import parse_json, strip_think
 from vva.core.types import fmt_ts
@@ -27,18 +27,15 @@ _REGION_SCHEMA = {
 }
 
 
-def _fn(name: str, desc: str, props: dict, required: list[str]) -> dict:
-    return {"type": "function", "function": {
-        "name": name, "description": desc,
-        "parameters": {"type": "object", "properties": props, "required": required}}}
-
-
-class VisionTools:
+class VisionTools(ToolProvider):
     def __init__(self, buffer: FrameBuffer, vlm: Any, timeline: Timeline, rules: WatchRules,
-                 bus: EventBus, look_max_side: int = 1280, crop_min_side: int = 768, **_: Any) -> None:
-        self.buffer, self.vlm, self.timeline, self.rules, self.bus = buffer, vlm, timeline, rules, bus
+                 bus: EventBus, look_max_side: int = 1280, crop_min_side: int = 768,
+                 look_max_tokens: int = 256, **_: Any) -> None:
+        super().__init__(bus)
+        self.buffer, self.vlm, self.timeline, self.rules = buffer, vlm, timeline, rules
         self.look_max_side = int(look_max_side)
         self.crop_min_side = int(crop_min_side)
+        self.look_max_tokens = int(look_max_tokens)
 
     # ------------------------------------------------------------------ schema
     def schemas(self) -> list[dict]:
@@ -55,9 +52,9 @@ class VisionTools:
                  "question": q,
                  "frames": {"type": "integer", "description": "抽取的帧数，2~8，默认4"}},
                 ["seconds", "question"]),
-            _fn("search_timeline", "查询后台记录的画面时间线（文字摘要）。",
+            _fn("search_timeline", "查询最近一段时间（最多两小时）后台记录的画面时间线（文字摘要）。",
                 {"minutes": {"type": "number", "description": "查询最近多少分钟，默认10"}}, []),
-            _fn("add_watch", "添加一条监控提醒规则，条件满足时系统会主动提醒用户。",
+            _fn("add_watch", "添加一条监控提醒规则，条件满足时系统会主动提醒操作员。",
                 {"condition": {"type": "string", "description": "可从单张画面判断的条件，如“画面中没有人坐在电脑前”"},
                  "cooldown_seconds": {"type": "number", "description": "两次提醒之间的最短间隔，默认60"}},
                 ["condition"]),
@@ -65,23 +62,6 @@ class VisionTools:
             _fn("remove_watch", "删除一条监控提醒规则。",
                 {"rule_id": {"type": "string", "description": "规则编号，如 r1；传 all 删除全部"}}, ["rule_id"]),
         ]
-
-    # ------------------------------------------------------------------ dispatch
-    async def call(self, name: str, args: dict[str, Any]) -> str:
-        fn = getattr(self, f"tool_{name}", None)
-        if fn is None:
-            return json.dumps({"error": f"未知工具 {name}"}, ensure_ascii=False)
-        self.bus.publish(TOPIC_UI, {"type": "tool", "name": name, "args": args})
-        t0 = time.time()
-        try:
-            result = await fn(**args)
-        except TypeError as e:
-            result = {"error": f"参数错误：{e}"}
-        except Exception as e:
-            log.exception("工具 %s 执行失败", name)
-            result = {"error": f"执行失败：{e}"}
-        log.info("工具 %s 耗时 %.2fs", name, time.time() - t0)
-        return json.dumps(result, ensure_ascii=False)
 
     # ------------------------------------------------------------------ helpers
     def _prepare(self, bf: BufferedFrame, region: list[float] | None) -> bytes:
@@ -91,7 +71,8 @@ class VisionTools:
         return encode_jpeg(resize_max_side(img, self.look_max_side), 90)
 
     async def _ask(self, images: list[bytes], question: str) -> str:
-        return strip_think(await self.vlm.ask(images, question, system=prompts.LOOK_SYSTEM))
+        return strip_think(await self.vlm.ask(images, question, system=prompts.LOOK_SYSTEM,
+                                              max_tokens=self.look_max_tokens))
 
     # ------------------------------------------------------------------ tools
     async def tool_look_now(self, question: str, region: list[float] | None = None) -> dict:

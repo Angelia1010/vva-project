@@ -5,7 +5,7 @@ import itertools
 import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from vva.core.types import fmt_ts
 
@@ -68,23 +68,49 @@ class WatchRule:
 
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "condition": self.condition, "cooldown_s": self.cooldown_s,
-                "trigger_count": self.trigger_count,
+                "created": self.created, "trigger_count": self.trigger_count,
                 "last_triggered": fmt_ts(self.last_triggered) if self.last_triggered else None}
 
 
 class WatchRules:
+    """监控规则集合。增删时通知监听者（例如持久化到长期记忆，重启后恢复）。"""
+
     def __init__(self) -> None:
         self._rules: dict[str, WatchRule] = {}
         self._ids = itertools.count(1)
+        self._listeners: list[Callable[[list[WatchRule]], None]] = []
+
+    def on_change(self, fn: Callable[[list[WatchRule]], None]) -> None:
+        self._listeners.append(fn)
+
+    def _changed(self) -> None:
+        for fn in self._listeners:
+            fn(self.list())
+
+    def load(self, items: list[dict[str, Any]]) -> None:
+        """从持久化数据恢复规则（不触发变更通知），编号接着已有的最大值继续。"""
+        max_id = 0
+        for d in items:
+            rule = WatchRule(id=str(d["id"]), condition=str(d["condition"]),
+                             cooldown_s=float(d.get("cooldown_s", 60.0)),
+                             created=float(d.get("created") or time.time()))
+            self._rules[rule.id] = rule
+            if rule.id[1:].isdigit():
+                max_id = max(max_id, int(rule.id[1:]))
+        self._ids = itertools.count(max_id + 1)
 
     def add(self, condition: str, cooldown_s: float = 60.0) -> WatchRule:
         rid = f"r{next(self._ids)}"
         rule = WatchRule(id=rid, condition=condition.strip(), cooldown_s=max(5.0, float(cooldown_s)))
         self._rules[rid] = rule
+        self._changed()
         return rule
 
     def remove(self, rule_id: str) -> bool:
-        return self._rules.pop(rule_id, None) is not None
+        ok = self._rules.pop(rule_id, None) is not None
+        if ok:
+            self._changed()
+        return ok
 
     def get(self, rule_id: str) -> WatchRule | None:
         return self._rules.get(rule_id)

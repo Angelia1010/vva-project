@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 from vva.agent import prompts
-from vva.core.bus import TOPIC_ALERT, TOPIC_UI, EventBus
+from vva.core.bus import TOPIC_ALERT, TOPIC_OBSERVATION, TOPIC_UI, EventBus
 from vva.core.jsonutil import parse_json
 from vva.perception.imaging import encode_jpeg, resize_max_side
 from vva.perception.timeline import Timeline, TimelineEntry, WatchRules
@@ -99,6 +99,7 @@ class Observer:
         )
         self.timeline.add(entry)
         self.bus.publish(TOPIC_UI, {"type": "timeline", **entry.to_dict()})
+        self.bus.publish(TOPIC_OBSERVATION, {"entry": entry, "jpeg": jpeg})
         for hit in data.get("triggered_rules") or []:
             rid = hit.get("id") if isinstance(hit, dict) else str(hit)
             evidence = hit.get("evidence", "") if isinstance(hit, dict) else ""

@@ -66,6 +66,7 @@ def create_web_app(app: App) -> FastAPI:
             "audio_in_push": isinstance(app.audio_in, PushAudioInput),
             "audio_out_push": isinstance(app.audio_out, CallbackAudioOutput),
             "voice": app.voice is not None,
+            "voice_mode": app.voice.mode if app.voice else None,
             "token_required": bool(token),
         })
 
@@ -126,6 +127,11 @@ def create_web_app(app: App) -> FastAPI:
                     await app.handle_user_text(str(msg.get("text", "")), "text")
                 elif t == "interrupt":
                     await app.interrupt()
+                elif t == "ptt" and app.voice:      # 按住说话（voice.mode=push_to_talk）
+                    if msg.get("state") == "down":
+                        app.voice.ptt_press()
+                    else:
+                        app.voice.ptt_release()
                 elif t == "reset":
                     await app.interrupt()
                     app.agent.reset()

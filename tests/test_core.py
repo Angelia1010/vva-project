@@ -139,11 +139,11 @@ def test_agent_tool_loop():
             [("look_now", {"question": "读数是多少", "region": [0.3, 0.2, 0.7, 0.8]})],
             "表上读数大约是 42。",
         ])
-        agent = Agent(llm, tools)
+        agent = Agent(llm, tools, filler_text="我看一下。")
         said = []
         final = await agent.run("表上读数是多少", said.append)
         assert final == "表上读数大约是 42。"
-        assert said[0] == "我看一下。"                       # 调工具前先说一句
+        assert said[0] == "我看一下。"                       # 配置了 filler_text 时，调工具前先说一句
         tool_msgs = [m for m in agent.history if m["role"] == "tool"]
         assert len(tool_msgs) == 2
         assert json.loads(tool_msgs[0]["content"])["objects"][0]["box"] == [0.3, 0.2, 0.7, 0.8]
@@ -212,7 +212,8 @@ def test_voice_session_end_to_end():
             heard.append(text)
 
         vs = VoiceSession(mic, spk, asr, tts, VADSegmenter(16000, engine="energy"), bus,
-                          on_utterance=on_utt, mute_mic_while_speaking=False, wake_words=["小智"])
+                          on_utterance=on_utt, mute_mic_while_speaking=False,
+                          mode="wake_word", wake_words=["小智"])
         await vs.start()
 
         async def speak_into_mic(pcm):
@@ -252,6 +253,7 @@ def test_app_integration(tmp_path):
         cfg["audio"]["input"]["type"] = "push"
         cfg["audio"]["output"]["type"] = "push"
         cfg["observer"]["interval"] = 0.3
+        cfg["memory"]["dir"] = str(tmp_path / "memory")
         obs_json = json.dumps({"summary": "一块表盘", "people_count": 0, "objects": ["表盘"],
                                "activities": [], "anomalies": [], "triggered_rules": []}, ensure_ascii=False)
         vlm = FakeVLM(answers={"监控画面": obs_json})
@@ -269,7 +271,7 @@ def test_app_integration(tmp_path):
         types = [e["type"] for e in _drain(ui)]
         for t in ("user", "assistant_start", "tool", "assistant_delta", "assistant_end", "timeline", "tts"):
             assert t in types, t
-        assert "读数是四十二。" in tts.texts and tts.texts[0] == "我看一下。"
+        assert tts.texts == ["读数是四十二。"]               # 默认不播报“我看一下”之类的过渡语
         # 新问题会打断旧回答
         app.agent.llm = FakeLLM([[("look_sequence", {"seconds": 5, "question": "x"})], "好"])
         await app.handle_user_text("问题一")

@@ -19,8 +19,9 @@ audio:
   output: {type: push}
 
 voice:
+  mode: always                    # always 一直在听 | wake_word 要说唤醒词 | push_to_talk 按住说话
   mute_mic_while_speaking: true   # 浏览器外放时防止听到自己；戴耳机可改 false 以支持说话打断
-  wake_words: []
+  wake_words: []                  # mode=wake_word 时使用，例如 ["小监"]
 
 models:
   vlm:
@@ -58,6 +59,7 @@ agent:
   look_max_side: 1024             # 8B 模型上下文有限，图片不宜过大
   crop_min_side: 768
   max_tool_rounds: 5
+  max_answer_chars: 60            # 回答长度上限（字）
 
 observer:
   enabled: true
@@ -65,6 +67,12 @@ observer:
   image_side: 768
   change_threshold: 6
   max_idle: 30
+
+memory:                           # 长期记忆，数据在 data/memory/（相对于项目目录）
+  enabled: true
+  retention_days: 30
+  keyframe_retention_days: 7
+  summary_minutes: 10
 
 web:
   host: 0.0.0.0

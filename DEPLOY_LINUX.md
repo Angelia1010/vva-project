@@ -181,49 +181,49 @@ video:
 
 ## 8. 开机自启（可选）
 
-`/etc/systemd/system/vva-models.service`：
+用 systemd 管理 4 个服务：开机自动启动，崩溃后自动重启。服务文件由脚本按 `scripts/models.env` 生成，路径、显卡、端口都和手动启动时一致。
 
-```ini
-[Unit]
-Description=VVA model services
-After=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-User=你的用户名
-WorkingDirectory=/home/你的用户名/apps/vva-project
-ExecStart=/home/你的用户名/apps/vva-project/scripts/models.sh start
-ExecStop=/home/你的用户名/apps/vva-project/scripts/models.sh stop
-TimeoutStartSec=1800
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`/etc/systemd/system/vva-app.service`：
-
-```ini
-[Unit]
-Description=VVA agent web service
-After=vva-models.service
-Requires=vva-models.service
-
-[Service]
-User=你的用户名
-WorkingDirectory=/home/你的用户名/apps/vva-project
-ExecStart=/home/你的用户名/apps/vva-project/scripts/run_app.sh
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
+| 服务 | 内容 | 启动顺序 |
+|---|---|---|
+| `vva-vlm` | 看图模型（`VLM_GPU`:`VLM_PORT`） | 开机即启动 |
+| `vva-tts` | 语音合成（`TTS_GPU`:`TTS_PORT`） | 开机即启动 |
+| `vva-asr` | 语音识别（`ASR_GPU`:`ASR_PORT`） | 等 TTS 就绪后启动，避免同卡抢显存 |
+| `vva-app` | 智能体网页服务（默认 9000 端口） | 等看图模型就绪后启动 |
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now vva-models vva-app
-journalctl -u vva-app -f
+cd <项目目录>
+scripts/models.sh stop                              # 先停掉手动启动的模型服务
+sudo scripts/install_systemd.sh --port 9000         # 生成并安装服务文件（--dry-run 只预览）
+sudo systemctl enable --now vva-vlm vva-tts vva-asr vva-app
+systemctl status vva-vlm vva-tts vva-asr vva-app --no-pager | grep -E "●|Active"
 ```
+
+等 3～5 分钟模型加载完，四个都显示 `active (running)` 即可。
+
+| 要做什么 | 命令 |
+|---|---|
+| 实时看日志 | `journalctl -u vva-app -f`（换成 `vva-vlm` / `vva-tts` / `vva-asr` 看模型日志） |
+| 改了 `config.yaml` | `sudo systemctl restart vva-app` |
+| 改了 `models.env` | 重新运行 `sudo scripts/install_systemd.sh`，再 `sudo systemctl restart` 对应服务 |
+| 全部停止 / 启动 | `sudo systemctl stop vva-app vva-asr vva-tts vva-vlm` / `sudo systemctl start vva-vlm vva-tts vva-asr vva-app` |
+| 取消开机自启 | `sudo systemctl disable vva-app vva-asr vva-tts vva-vlm` |
+
+装好后统一用 `systemctl` 管理，**不要再运行 `scripts/models.sh start`**，否则会和系统服务抢端口和显存。日志也改由 `journalctl` 查看，不再写到 `logs/` 目录。
+
+### 语音合成提速
+
+TTS 默认带 `--enforce-eager` 启动，比较稳，但合成首包很慢（实测约 17 秒）。可以在 `models.env` 里设 `TTS_ENFORCE_EAGER=0` 去掉它：
+
+```bash
+sed -i 's/^TTS_ENFORCE_EAGER=.*/TTS_ENFORCE_EAGER=0/' scripts/models.env
+sudo scripts/install_systemd.sh --port 9000 && sudo systemctl restart vva-tts
+# 等 2～3 分钟后测速，看第二次的首包时间
+source .venv/bin/activate
+python scripts/check_models.py -c config.yaml --only tts
+python scripts/check_models.py -c config.yaml --only tts
+```
+
+如果 `vva-tts` 一直是 activating 或反复重启，就改回 `TTS_ENFORCE_EAGER=1`，重新运行安装脚本并重启 `vva-tts`。
 
 ## 9. 常见问题
 
@@ -235,15 +235,19 @@ journalctl -u vva-app -f
 | TTS 启动报 `--served-model-name` 不支持 | 删掉 `models.sh` 中 TTS 的这个参数，并把 `config.yaml` 的 `models.tts.model` 改成 `TTS_MODEL` 的完整值 |
 | 自检“函数调用”失败 | 确认 VLM 启动参数有 `--enable-auto-tool-choice --tool-call-parser hermes`（换成 Qwen3.5/3.6 系列要改为 `qwen3_coder`） |
 | 自检“定位坐标”失败 | 按提示修改 `models.vlm.bbox_format` |
+| 浏览器测试页没有声音 | 先在页面上点一下（浏览器要求用户操作过页面才允许播放）；顶部状态应出现“正在说…”。仍无声音时查看 `journalctl -u vva-app --since "10 min ago" \| grep -i -E "语音合成\|tts\|error"` |
+| 说完话要等十几秒才有声音 | TTS 首包慢，见第 8 步“语音合成提速” |
 | 播放出来是噪音 | TTS 返回的不是原始 PCM：确认 `stream_format: audio`；或把 `response_format` 改为 `wav`、`stream` 改为 `false`（会慢一些） |
 | 声音变调（太快或太慢） | `models.tts.sample_rate` 与服务实际采样率不一致；Qwen3-TTS 为 24000 |
 | 页面提示无法使用摄像头/麦克风 | 没有通过 localhost 或 HTTPS 访问，见第 6 步 |
 | 系统听到自己说话、反复打断 | 保持 `voice.mute_mic_while_speaking: true`；或戴耳机 |
-| 环境吵、经常误识别 | 调高 `vad.threshold_db`（如 -38），或设置唤醒词 `voice.wake_words: ["小智"]` |
+| 敲键盘、环境噪声也会触发 | 先 `uv pip install -r requirements.txt` 装上 `webrtcvad-wheels`（日志里出现“VAD 使用 webrtcvad”）；仍然误触发就调高 `vad.threshold_db`（如 -35），或改用 `voice.mode: wake_word`（配 `voice.wake_words: ["小监"]`）或 `push_to_talk` |
+| 正常说话没反应 | 调低 `vad.min_band_ratio`（如 0.5）或 `vad.threshold_db`（如 -45）；`journalctl -u vva-app \| grep 忽略识别结果` 可看到被丢弃的原因 |
+| 想清空长期记忆 | 停掉 `vva-app` 后删除项目目录下的 `data/memory/`，再启动 |
 | 回答慢 | 把 `agent.look_max_side` 降到 896、`observer.interval` 调大；或关闭后台观察 `observer.enabled: false` |
 | 读表不准 | 在 `agent.scene_hint` 写清表的量程、单位；让摄像头离表近一些；8B 模型能力有限时考虑升级更大的模型 |
 
 ### 日志位置
 
-- 模型服务：`logs/vlm.log`、`logs/asr.log`、`logs/tts.log`
+- 模型服务：用 `scripts/models.sh` 启动时在 `logs/vlm.log`、`logs/asr.log`、`logs/tts.log`；用 systemd 管理时用 `journalctl -u vva-vlm`（或 `vva-asr`、`vva-tts`）
 - 智能体服务：终端输出，或 `journalctl -u vva-app`

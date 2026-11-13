@@ -75,6 +75,7 @@
         </label>
         <span style="flex:1"></span>
         <button id="btn-mic" class="primary">开启麦克风</button>
+        <button id="btn-ptt" type="button" style="display:none" title="也可以按住空格键说话">按住说话</button>
         <div class="meter" title="麦克风音量"><div id="meter"></div></div>
       </div>
     </div>
@@ -84,11 +85,11 @@
     </div>
   </section>
   <section class="card">
-    <h2>对话（可直接说话，也可打字）</h2>
+    <h2>指令（语音或打字）</h2>
     <div id="chat"></div>
     <div id="rules"></div>
     <form id="form">
-      <input id="input" type="text" placeholder="例如：画面里有几个人？表上读数是多少？有人离开就提醒我" autocomplete="off">
+      <input id="input" type="text" placeholder="例如：画面里有几个人？表上读数多少？今天上午9点左右发生了什么？有人离开就提醒我" autocomplete="off">
       <button class="primary" type="submit">发送</button>
     </form>
     <div class="controls">
@@ -173,7 +174,7 @@ function handle(ev) {
     case "bbox": showBoxes(ev.boxes); break;
     case "vad": if (ev.state === "start") pill("pill-state", "正在听…", "hot"); else pill("pill-state", "识别中…", "busy"); break;
     case "tts": if (ev.state === "speaking") pill("pill-state", "正在说…", "busy"); else pill("pill-state", "空闲"); break;
-    case "asr": if (ev.ignored) addMsg("sys", "（未唤醒，已忽略）" + ev.text); break;
+    case "asr": if (ev.ignored) addMsg("sys", `（${ev.reason || "已忽略"}）${ev.text}`); break;
     case "error": addMsg("sys", "⚠️ " + ev.message); break;
   }
 }
@@ -257,9 +258,18 @@ const WORKLET = `class Cap extends AudioWorkletProcessor {
 function ensurePlayer() {
   if (!playCtx) playCtx = new AudioContext();
   if (playCtx.state === "suspended") playCtx.resume();
+  return playCtx.state === "running";
+}
+// 浏览器要求用户先操作过页面才允许播放声音：首次点击/按键时激活
+let soundTip = "";
+function unlockSound() {
+  ensurePlayer();
+  if (soundTip) { soundTip = ""; showTips(); }
+  document.removeEventListener("pointerdown", unlockSound);
+  document.removeEventListener("keydown", unlockSound);
 }
 function playPcm(arrayBuf) {
-  ensurePlayer();
+  if (!ensurePlayer() && !soundTip) { soundTip = "收到语音回答但浏览器未允许播放：点击页面任意位置即可启用语音播报"; showTips(); }
   const pcm = new Int16Array(arrayBuf);
   if (!pcm.length) return;
   const buf = playCtx.createBuffer(1, pcm.length, outRate);
@@ -291,12 +301,17 @@ function resampleTo(input, srcRate, dstRate) {
   return out;
 }
 
+// 语音通道：页面加载后就建立并保持连接（只打字提问也能收到语音回答），断开后自动重连
+let audioReady = null, audioRetry = null;
 function connectAudio() {
-  return new Promise((resolve, reject) => {
+  if (audioReady && audioWs && audioWs.readyState <= 1) return audioReady;
+  clearTimeout(audioRetry);
+  audioReady = new Promise((resolve, reject) => {
     const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/ingest/audio" + (TOKEN ? "?token=" + TOKEN : "");
-    audioWs = new WebSocket(url); audioWs.binaryType = "arraybuffer";
+    const sock = new WebSocket(url); sock.binaryType = "arraybuffer";
+    audioWs = sock;
     let ready = false;
-    audioWs.onmessage = (m) => {
+    sock.onmessage = (m) => {
       if (typeof m.data === "string") {
         const msg = JSON.parse(m.data);
         if (msg.type === "config") {
@@ -305,13 +320,20 @@ function connectAudio() {
         } else if (msg.type === "clear") stopPlayback();
       } else playPcm(m.data);
     };
-    audioWs.onerror = () => { if (!ready) reject(new Error("语音通道连接失败")); };
-    audioWs.onclose = () => { if (micStream) { pill("pill-mic", "语音通道断开", "hot"); stopMic(); } };
+    sock.onerror = () => { if (!ready) reject(new Error("语音通道连接失败")); };
+    sock.onclose = () => {
+      if (!ready) reject(new Error("语音通道连接失败"));
+      if (audioWs !== sock) return;
+      audioWs = null; audioReady = null;
+      if (micStream) { pill("pill-mic", "语音通道断开", "hot"); stopMic(); }
+      audioRetry = setTimeout(() => connectAudio().catch(() => {}), 2000);
+    };
   });
+  return audioReady;
 }
 async function startMic() {
   ensurePlayer();
-  await connectAudio();
+  await connectAudio();   // 通常页面加载时已连好，这里只在断线时补连
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
   micCtx = new AudioContext();
@@ -342,9 +364,37 @@ function stopMic() {
   micNode = micCtx = micStream = null;
   $("meter").style.width = "0";
   $("btn-mic").textContent = "开启麦克风"; $("btn-mic").className = "primary";
-  if (audioWs && audioWs.readyState <= 1) { const w = audioWs; audioWs = null; w.close(); }
+  // 不关闭语音通道：关掉麦克风后打字提问仍能听到回答
   pill("pill-mic", "麦克风关闭");
 }
+// ============================================================ 按住说话（voice.mode=push_to_talk）
+let pttDown = false;
+async function pttPress() {
+  if (pttDown) return;
+  pttDown = true;
+  try { if (!micStream) await startMic(); }
+  catch (e) { pttDown = false; notice("无法开启语音：" + e.message); return; }
+  if (!pttDown) return;                     // 麦克风打开期间已经松开
+  ensurePlayer(); stopPlayback();
+  ws && ws.send(JSON.stringify({type: "ptt", state: "down"}));
+  $("btn-ptt").className = "active"; $("btn-ptt").textContent = "松开结束";
+}
+function pttRelease() {
+  if (!pttDown) return;
+  pttDown = false;
+  ws && ws.send(JSON.stringify({type: "ptt", state: "up"}));
+  $("btn-ptt").className = "primary"; $("btn-ptt").textContent = "按住说话";
+}
+function enablePtt() {
+  const b = $("btn-ptt");
+  b.style.display = ""; b.className = "primary";
+  b.onpointerdown = (e) => { e.preventDefault(); pttPress(); };
+  b.onpointerup = b.onpointerleave = b.onpointercancel = pttRelease;
+  const typing = () => document.activeElement && ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+  document.addEventListener("keydown", (e) => { if (e.code === "Space" && !e.repeat && !typing()) { e.preventDefault(); pttPress(); } });
+  document.addEventListener("keyup", (e) => { if (e.code === "Space" && !typing()) { e.preventDefault(); pttRelease(); } });
+}
+
 $("btn-mic").onclick = async () => {
   if (micStream) return stopMic();
   try { await startMic(); }
@@ -352,6 +402,8 @@ $("btn-mic").onclick = async () => {
 };
 
 // ============================================================ 启动检查
+let baseTips = [];
+function showTips() { notice(baseTips.concat(soundTip ? [soundTip] : []).join("；")); }
 (async () => {
   const tips = [];
   if (!navigator.mediaDevices) {
@@ -376,8 +428,18 @@ $("btn-mic").onclick = async () => {
       tips.push(caps.voice ? "语音由服务器本机麦克风采集，网页麦克风不可用"
                            : "语音未开启（--no-audio 或语音模块启动失败），可以打字提问");
     }
+    if (caps.voice_mode === "push_to_talk" && caps.audio_in_push) {
+      enablePtt();
+      tips.push("按住说话模式：按住“按住说话”按钮或空格键说话，松开后识别");
+    }
+    if (caps.audio_out_push) {
+      connectAudio().catch(() => {});
+      soundTip = "点击页面任意位置即可启用语音播报";
+      document.addEventListener("pointerdown", unlockSound);
+      document.addEventListener("keydown", unlockSound);
+    }
   } catch (e) { tips.push("无法连接服务端"); }
-  notice(tips.join("；"));
+  baseTips = tips; showTips();
   try { await listCameras(); } catch (e) {}
   connectChat();
 })();

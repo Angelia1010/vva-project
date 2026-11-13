@@ -141,7 +141,7 @@ function handle(ev) {
     case "bbox": showBoxes(ev.boxes); break;
     case "vad": setPill("pill-vad", ev.state === "start" ? "正在听…" : "静音", ev.state === "start" ? "hot" : ""); break;
     case "tts": setPill("pill-vad", ev.state === "speaking" ? "正在说…" : "静音", ev.state === "speaking" ? "busy" : ""); break;
-    case "asr": if (ev.ignored) addMsg("alert", "（未唤醒，已忽略）" + ev.text); break;
+    case "asr": if (ev.ignored) addMsg("alert", `（${ev.reason || "已忽略"}）${ev.text}`); break;
     case "error": addMsg("alert", "⚠️ " + ev.message); break;
   }
 }
