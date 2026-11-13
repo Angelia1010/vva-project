@@ -3,157 +3,226 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>场景包管理</title>
+<title>场景包 - 监控值守台</title>
+<link rel="stylesheet" href="/static/console.css">
 <style>
-  :root { --bg:#f6f6f4; --card:#fff; --line:#e3e2dc; --text:#222; --muted:#777; --accent:#4b5bd6; --warn:#c2410c; --ok:#15803d; }
-  * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--line); background:#fff; }
-  header h1 { font-size:16px; margin:0; }
-  main { max-width:1100px; margin:0 auto; padding:16px; display:grid; gap:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
-  .card h2 { font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:600; }
-  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
-  input[type=text], textarea { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:8px; font:inherit; }
-  textarea { min-height:64px; resize:vertical; }
-  button { padding:6px 12px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; font-size:13px; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button.danger { color:var(--warn); }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
-  .objects { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:12px; }
-  .obj h3 { margin:0 0 4px; font-size:15px; }
-  .thumbs { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
-  .thumb { position:relative; }
-  .thumb img { width:96px; height:72px; object-fit:cover; border-radius:6px; border:1px solid var(--line); display:block; }
-  .thumb button { position:absolute; top:2px; right:2px; padding:0 6px; font-size:12px; }
-  .hint { font-size:12px; color:var(--muted); }
-  #msg { font-size:13px; }
-  #msg.err { color:var(--warn); } #msg.ok { color:var(--ok); }
-  @media (max-width:720px) { .grid2 { grid-template-columns:1fr; } }
+  .layout { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .scene-form { position: sticky; top: 16px; }
+  .scene-form .actions { margin-top: 14px; }
+
+  .targets-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .targets-head h2 { margin: 0; font-size: 15px; }
+  .targets-head .spacer { flex: 1; }
+
+  /* 新增 / 编辑目标的表单：展开在列表上方 */
+  .editor { border-left: 4px solid var(--steel); margin-bottom: 16px; display: none; }
+  .editor.open { display: block; }
+  .editor .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .editor .actions { display: flex; gap: 8px; margin-top: 14px; }
+
+  /* 目标：左侧参考图，右侧说明 */
+  .target { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 16px; margin-bottom: 12px; }
+  .refs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; align-content: start; }
+  .ref { position: relative; aspect-ratio: 4 / 3; background: #dfe5ea; border-radius: 4px; overflow: hidden; }
+  .ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ref button { position: absolute; top: 4px; right: 4px; padding: 0 7px; line-height: 20px; font-size: 12px;
+                background: rgba(23,33,43,.72); color: #fff; border: 0; border-radius: 3px; }
+  .ref.add { display: flex; align-items: center; justify-content: center; border: 1px dashed #9aa7b3; background: transparent;
+             color: var(--ink-2); font-size: 13px; cursor: pointer; text-align: center; padding: 6px; }
+  .ref.add:hover, .ref.add:focus-within { border-color: var(--steel); color: var(--steel); }
+  .ref.add input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .target h3 { margin: 0; font-size: 17px; }
+  .target .aka { color: var(--ink-2); font-size: 13px; margin-left: 8px; font-weight: 400; }
+  .target dl { display: grid; grid-template-columns: 4em 1fr; gap: 4px 10px; margin: 10px 0 12px; font-size: 13px; }
+  .target dt { color: var(--ink-2); }
+  .target dd { margin: 0; }
+  .target .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .target .warn { color: #8a5a00; font-size: 13px; margin: 10px 0 0; }
+
+  .empty-state { padding: 28px; text-align: center; color: var(--ink-2); border: 1px dashed #9aa7b3; border-radius: 6px; line-height: 1.8; }
+  .empty-state button { margin-top: 10px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .scene-form { position: static; }
+    .target { grid-template-columns: 1fr; }
+    .editor .grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>场景包管理</h1>
-  <span id="scene-name" class="hint"></span>
-  <span style="flex:1"></span>
-  <span id="msg"></span>
-  <input id="token" type="text" placeholder="管理口令" style="width:140px;display:none">
-  <a href="/knowledge" class="hint">知识库</a>
-  <a href="/browser" class="hint">返回测试页</a>
+<header class="duty">
+  <span class="brand">监控值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">监控</a>
+    <a href="/scene" aria-current="page">场景包</a>
+    <a href="/knowledge">知识库</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
 </header>
-<main>
-  <section class="card">
-    <h2>场景说明（写进智能体和后台观察的提示词）</h2>
-    <div class="grid2">
-      <div>
-        <label>场景概况</label>
-        <textarea id="description" placeholder="例如：设备间监控，画面中有一台空压机和墙上的压力表，正常情况下无人值守"></textarea>
-        <label>画面区域（每行一个：位置=是什么）</label>
-        <textarea id="areas" placeholder="左侧=空压机&#10;右上方=墙上的压力表"></textarea>
-        <label>语音热词（逗号分隔，提高专业术语的识别率；目标名称会自动加入）</label>
-        <input id="hotwords" type="text" placeholder="空压机，压力表，兆帕">
-      </div>
-      <div>
-        <label>判断标准（每行一条，如阈值、作业规范）</label>
-        <textarea id="standards" placeholder="压力表正常范围 0.2~0.5 兆帕，超过 0.6 为异常"></textarea>
-        <label>规则模板（每行一条：条件 | 冷却秒数 | 启用 是/否；启动时自动加入监控提醒）</label>
-        <textarea id="rules" placeholder="有人进入画面 | 300 | 是"></textarea>
-      </div>
-    </div>
-    <div class="row"><button class="primary" id="btn-save-scene">保存场景说明</button></div>
-  </section>
 
-  <section class="card">
-    <h2>特定目标（参考图 + 描述，让模型认识现场的专用设备、标识等）</h2>
-    <p class="hint">参考图建议 2~3 张、裁剪到只包含目标，不同角度或状态各一张。智能体被问到这些目标时会对照参考图判断；监控规则提到它们时，后台观察也会带上参考图。</p>
-    <div id="objects" class="objects"></div>
-  </section>
-
-  <section class="card">
-    <h2>新增 / 修改目标</h2>
-    <div class="grid2">
-      <div>
-        <label>名称（与已有名称相同则为修改）</label>
-        <input id="o-name" type="text" placeholder="压力表">
-        <label>别名（逗号分隔）</label>
-        <input id="o-aliases" type="text" placeholder="表盘，压力计">
-        <label>外观描述</label>
-        <textarea id="o-desc" placeholder="圆形白色表盘，黑色指针，量程 0~1 兆帕"></textarea>
-      </div>
-      <div>
-        <label>正常状态</label>
-        <textarea id="o-normal" placeholder="指针在 0.2~0.5 之间"></textarea>
-        <label>异常状态</label>
-        <textarea id="o-abnormal" placeholder="指针超过 0.6，或表盘起雾看不清"></textarea>
-      </div>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1 id="scene-name">场景包</h1>
+      <p>告诉监控助手现场有什么、专用设备长什么样、什么算异常。保存后立即生效，不需要重启服务。</p>
     </div>
-    <div class="row"><button class="primary" id="btn-save-obj">保存目标</button><span class="hint">保存后可在上方为它上传参考图</span></div>
-  </section>
-</main>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="layout">
+    <section class="panel scene-form" aria-labelledby="t-scene">
+      <h2 id="t-scene">现场说明</h2>
+      <label class="field" for="description">场景概况</label>
+      <textarea id="description" placeholder="设备间监控，画面中有一台空压机和墙上的压力表，正常无人值守"></textarea>
+      <label class="field" for="areas">画面区域<span class="muted">每行一个，位置=是什么</span></label>
+      <textarea id="areas" placeholder="左侧=空压机&#10;右上方=压力表&#10;右侧=出入门"></textarea>
+      <label class="field" for="standards">判断标准<span class="muted">每行一条</span></label>
+      <textarea id="standards" placeholder="压力表正常范围 0.2~0.5 兆帕，超过 0.6 为异常&#10;22:00 到次日 7:00 不应有人进入"></textarea>
+      <label class="field" for="rules">规则模板<span class="muted">条件 | 冷却秒数 | 是/否启用</span></label>
+      <textarea id="rules" placeholder="有人进入画面 | 300 | 是"></textarea>
+      <label class="field" for="hotwords">语音热词<span class="muted">逗号分隔，目标名称会自动加入</span></label>
+      <input id="hotwords" type="text" placeholder="空压机，压力表，兆帕">
+      <div class="actions"><button class="primary" id="btn-save-scene">保存现场说明</button></div>
+    </section>
+
+    <section aria-labelledby="t-targets">
+      <div class="targets-head">
+        <h2 id="t-targets">特定目标</h2>
+        <span class="muted">每个目标 2~3 张裁好的参考图，不同角度或状态各一张</span>
+        <span class="spacer"></span>
+        <button class="primary" id="btn-new">新增目标</button>
+      </div>
+
+      <div class="panel editor" id="editor" aria-labelledby="t-editor">
+        <h2 id="t-editor">新增目标</h2>
+        <div class="grid">
+          <div>
+            <label class="field" for="o-name">名称</label>
+            <input id="o-name" type="text" placeholder="压力表">
+            <label class="field" for="o-aliases">别名<span class="muted">逗号分隔</span></label>
+            <input id="o-aliases" type="text" placeholder="表盘，压力计">
+            <label class="field" for="o-desc">外观</label>
+            <textarea id="o-desc" placeholder="圆形白色表盘，黑色指针，量程 0~1 兆帕"></textarea>
+          </div>
+          <div>
+            <label class="field" for="o-normal">正常时</label>
+            <textarea id="o-normal" placeholder="指针在 0.2~0.5 之间"></textarea>
+            <label class="field" for="o-abnormal">异常时</label>
+            <textarea id="o-abnormal" placeholder="指针超过 0.6，或表盘起雾看不清"></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="btn-save-obj">保存目标</button>
+          <button id="btn-cancel">取消</button>
+        </div>
+      </div>
+
+      <div id="objects"></div>
+    </section>
+  </div>
+</div>
+
+<script src="/static/console.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let tokenRequired = false;
-
-function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = cls || ""; if (text) setTimeout(() => { if (m.textContent === text) m.textContent = ""; }, 4000); }
-function token() { return $("token").value.trim(); }
+let msgTimer = null;
+function msg(text, cls) {
+  const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || "");
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000);
+}
 function splitList(s) { return s.split(/[,，、\n]/).map(x => x.trim()).filter(Boolean); }
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
 async function call(method, url, body, isJson = true) {
-  const headers = { "X-Token": token() };
+  const headers = { "X-Token": adminToken() };
   if (body !== undefined && isJson) headers["Content-Type"] = "application/json";
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : (isJson ? JSON.stringify(body) : body) });
   if (!res.ok) {
-    let detail = res.status + "";
+    let detail = String(res.status);
     try { detail = (await res.json()).detail || detail; } catch (e) {}
+    if (res.status === 401) { $("token").style.display = "block"; $("token").focus(); }
     throw new Error(detail);
   }
   return res.json();
 }
 
-function render(s) {
-  $("scene-name").textContent = "当前场景包：" + s.name;
+function openEditor(o) {
+  $("t-editor").textContent = o ? `编辑“${o.name}”` : "新增目标";
+  $("o-name").value = o ? o.name : ""; $("o-name").readOnly = !!o;
+  $("o-aliases").value = o ? o.aliases.join("，") : "";
+  $("o-desc").value = o ? o.description : ""; $("o-normal").value = o ? o.normal : ""; $("o-abnormal").value = o ? o.abnormal : "";
+  $("editor").classList.add("open");
+  $("editor").scrollIntoView({ block: "nearest" });
+  (o ? $("o-aliases") : $("o-name")).focus();
+}
+function closeEditor() { $("editor").classList.remove("open"); }
+
+function renderScene(s) {
+  $("scene-name").textContent = `场景包：${s.name}`;
   $("description").value = s.description || "";
   $("areas").value = Object.entries(s.areas || {}).map(([k, v]) => `${k}=${v}`).join("\n");
   $("hotwords").value = (s.hotwords || []).join("，");
   $("standards").value = (s.standards || []).join("\n");
   $("rules").value = (s.rules || []).map(r => `${r.condition} | ${r.cooldown_s} | ${r.enabled ? "是" : "否"}`).join("\n");
+}
+
+function renderObjects(s) {
   const box = $("objects"); box.innerHTML = "";
-  if (!s.objects.length) box.innerHTML = '<p class="hint">还没有目标，在下方新增。</p>';
+  if (!s.objects.length) {
+    box.innerHTML = `<div class="empty-state">还没有特定目标。<br>把现场专用的设备、指示灯、工牌、标识加进来，监控助手就能对照参考图认出它们。
+      <br><button class="primary" type="button">新增第一个目标</button></div>`;
+    box.querySelector("button").onclick = () => openEditor(null);
+    return;
+  }
   for (const o of s.objects) {
-    const el = document.createElement("div"); el.className = "card obj";
     const name = encodeURIComponent(o.name);
-    el.innerHTML = `<h3></h3><div class="hint info"></div><div class="thumbs"></div>
-      <div class="row"><input type="file" accept="image/*" multiple style="max-width:180px">
-      <button class="snap">截取当前画面</button><button class="edit">编辑</button><button class="danger del">删除目标</button></div>`;
-    el.querySelector("h3").textContent = o.name + (o.aliases.length ? `（${o.aliases.join("、")}）` : "");
-    el.querySelector(".info").textContent = [o.description && "外观：" + o.description, o.normal && "正常：" + o.normal,
-                                             o.abnormal && "异常：" + o.abnormal].filter(Boolean).join("；") || "（没有描述）";
-    const thumbs = el.querySelector(".thumbs");
-    if (!o.images.length) thumbs.innerHTML = '<span class="hint">还没有参考图</span>';
+    const el = document.createElement("article"); el.className = "panel target";
+    const rows = [["外观", o.description], ["正常时", o.normal], ["异常时", o.abnormal]].filter(r => r[1]);
+    el.innerHTML = `
+      <div class="refs"></div>
+      <div>
+        <h3>${esc(o.name)}${o.aliases.length ? `<span class="aka">也叫 ${esc(o.aliases.join("、"))}</span>` : ""}</h3>
+        ${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
+                      : '<p class="hint">还没有描述。点“编辑”补充外观和正常、异常时的样子。</p>'}
+        <div class="row">
+          <button class="snap" type="button">截取当前画面</button>
+          <button class="edit" type="button">编辑</button>
+          <button class="danger del" type="button">删除目标</button>
+        </div>
+        ${o.images.length ? "" : '<p class="warn">还没有参考图：只有文字描述时，辨认效果会差一些。</p>'}
+      </div>`;
+    const refs = el.querySelector(".refs");
     for (const f of o.images) {
-      const t = document.createElement("div"); t.className = "thumb";
-      t.innerHTML = `<img src="/api/scene/objects/${name}/images/${f}?t=${Date.now()}"><button title="删除">×</button>`;
-      t.querySelector("button").onclick = () => act(() => call("DELETE", `/api/scene/objects/${name}/images/${f}`), "已删除参考图");
-      thumbs.appendChild(t);
+      const r = document.createElement("div"); r.className = "ref";
+      r.innerHTML = `<img alt="${esc(o.name)}参考图" src="/api/scene/objects/${name}/images/${f}?t=${Date.now()}"><button type="button">删除</button>`;
+      r.querySelector("button").onclick = () => act(() => call("DELETE", `/api/scene/objects/${name}/images/${f}`), "已删除参考图", false);
+      refs.appendChild(r);
     }
-    el.querySelector("input[type=file]").onchange = async (e) => {
-      for (const file of e.target.files) await act(() => call("POST", `/api/scene/objects/${name}/images`, file, false), "已上传参考图");
+    const add = document.createElement("label"); add.className = "ref add";
+    add.innerHTML = `上传参考图<input type="file" accept="image/*" multiple>`;
+    add.querySelector("input").onchange = async (e) => {
+      for (const file of e.target.files) await act(() => call("POST", `/api/scene/objects/${name}/images`, file, false), "已上传参考图", false);
     };
-    el.querySelector(".snap").onclick = () => act(() => call("POST", `/api/scene/objects/${name}/images?from=snapshot`), "已截取当前画面（建议之后换成裁剪好的局部图）");
-    el.querySelector(".del").onclick = () => { if (confirm(`删除目标“${o.name}”及其参考图？`)) act(() => call("DELETE", `/api/scene/objects/${name}`), "已删除目标"); };
-    el.querySelector(".edit").onclick = () => {
-      $("o-name").value = o.name; $("o-aliases").value = o.aliases.join("，"); $("o-desc").value = o.description;
-      $("o-normal").value = o.normal; $("o-abnormal").value = o.abnormal; $("o-name").scrollIntoView({behavior: "smooth"});
+    refs.appendChild(add);
+    el.querySelector(".snap").onclick = () => act(() => call("POST", `/api/scene/objects/${name}/images?from=snapshot`),
+      "已截取当前画面。目标在画面里较小时，建议换成裁剪好的局部图", false);
+    el.querySelector(".edit").onclick = () => openEditor(o);
+    el.querySelector(".del").onclick = () => {
+      if (confirm(`删除“${o.name}”和它的参考图？`)) act(() => call("DELETE", `/api/scene/objects/${name}`), "已删除目标", false);
     };
     box.appendChild(el);
   }
 }
 
-async function act(fn, okText) {
-  try { const s = await fn(); render(s); msg(okText, "ok"); }
-  catch (e) { msg("失败：" + e.message, "err"); if (String(e.message).includes("口令")) $("token").style.display = ""; }
+async function act(fn, okText, withForm = true) {
+  try {
+    const s = await fn();
+    if (withForm) renderScene(s);
+    renderObjects(s); msg(okText, "ok"); return true;
+  } catch (e) { msg("没有保存：" + e.message, "err"); return false; }
 }
 
 $("btn-save-scene").onclick = () => act(() => {
@@ -165,17 +234,25 @@ $("btn-save-scene").onclick = () => act(() => {
     .map(p => ({ condition: p[0], cooldown_s: Number(p[1]) || 60, enabled: !/^(否|no|false|0)$/i.test(p[2] || "") }));
   return call("PUT", "/api/scene", { description: $("description").value.trim(), areas,
     hotwords: splitList($("hotwords").value), standards: $("standards").value.split("\n").map(x => x.trim()).filter(Boolean), rules });
-}, "已保存场景说明，新启用的规则模板已加入监控提醒");
+}, "已保存现场说明，新启用的规则模板已加入监控提醒");
 
-$("btn-save-obj").onclick = () => act(() => call("POST", "/api/scene/objects", {
-  name: $("o-name").value.trim(), aliases: splitList($("o-aliases").value), description: $("o-desc").value.trim(),
-  normal: $("o-normal").value.trim(), abnormal: $("o-abnormal").value.trim() }), "已保存目标");
+$("btn-new").onclick = () => openEditor(null);
+$("btn-cancel").onclick = closeEditor;
+$("btn-save-obj").onclick = async () => {
+  if (!$("o-name").value.trim()) { msg("请填写目标名称", "err"); $("o-name").focus(); return; }
+  const ok = await act(() => call("POST", "/api/scene/objects", {
+    name: $("o-name").value.trim(), aliases: splitList($("o-aliases").value), description: $("o-desc").value.trim(),
+    normal: $("o-normal").value.trim(), abnormal: $("o-abnormal").value.trim() }), "已保存目标，接着给它上传参考图", false);
+  if (ok) closeEditor();
+};
 
 (async () => {
   try {
-    const s = await (await fetch("/api/scene")).json();
-    tokenRequired = s.token_required; if (tokenRequired) $("token").style.display = "";
-    render(s);
+    const res = await fetch("/api/scene");
+    if (!res.ok) throw new Error(res.status === 404 ? "服务端未开启场景包（scene.enabled）" : String(res.status));
+    const s = await res.json();
+    if (s.token_required) $("token").style.display = "block";
+    renderScene(s); renderObjects(s);
   } catch (e) { msg("无法读取场景包：" + e.message, "err"); }
 })();
 </script>

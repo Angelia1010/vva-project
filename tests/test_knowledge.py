@@ -177,3 +177,16 @@ def test_embedding_vectors_are_float32(tmp_path):
         assert all(c.embedding.dtype == np.float32 for c in kb.store.all_chunks())
         await kb.close()
     asyncio.run(run())
+
+
+def test_overview_payload_keeps_document_list(tmp_path):
+    async def run():
+        kb = _kb(tmp_path)
+        kb.add_document("巡检规范.md", SOP.encode())
+        await kb.wait_idle()
+        data = kb.overview()
+        assert isinstance(data["documents"], list) and data["documents"][0]["name"] == "巡检规范.md"
+        assert data["stats"]["documents"] == 1 and ".pdf" in data["supported"]
+        json.dumps(data, ensure_ascii=False)                                # 可直接作为接口返回
+        await kb.close()
+    asyncio.run(run())

@@ -3,105 +3,150 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>浏览器测试 · 实时语音视频分析智能体</title>
+<title>监控值守台</title>
+<link rel="stylesheet" href="/static/console.css">
 <style>
-  :root { --bg:#f6f6f4; --card:#fff; --line:#e3e2dc; --text:#222; --muted:#777; --accent:#4b5bd6; --warn:#c2410c; --ok:#15803d; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
-  header { padding:12px 20px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
-  header h1 { font-size:17px; font-weight:600; margin:0; flex:1; min-width:220px; }
-  .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:#eee; color:var(--muted); }
-  .pill.on { background:#e7f6ec; color:var(--ok); }
-  .pill.busy { background:#eef0ff; color:var(--accent); }
-  .pill.hot { background:#fdeee6; color:var(--warn); }
-  main { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr); gap:16px; padding:16px; height:calc(100vh - 56px); }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; flex-direction:column; min-height:0; }
-  .card h2 { font-size:14px; margin:0 0 8px; color:var(--muted); font-weight:600; }
-  .left { display:flex; flex-direction:column; gap:16px; min-height:0; }
-  .video-wrap { position:relative; background:#111; border-radius:8px; overflow:hidden; aspect-ratio:16/9; }
-  .video-wrap video { display:block; width:100%; height:100%; object-fit:contain; }
-  .video-wrap canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-  .video-wrap .placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:14px; }
-  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; font-size:13px; }
-  .meter { width:120px; height:8px; background:#eee; border-radius:4px; overflow:hidden; }
-  .meter div { height:100%; width:0; background:var(--ok); transition:width .08s; }
-  select, button { padding:7px 12px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; font-size:13px; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button.active { background:#e7f6ec; border-color:#9fd6b0; color:var(--ok); }
-  .list { overflow-y:auto; flex:1; font-size:13px; }
-  .tl-item { padding:6px 2px; border-bottom:1px dashed var(--line); }
-  .tl-item .t { color:var(--muted); margin-right:6px; font-variant-numeric:tabular-nums; }
-  .tl-item .anom { color:var(--warn); }
-  #chat { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px; padding:4px; }
-  .msg { max-width:88%; padding:8px 12px; border-radius:12px; line-height:1.55; font-size:14px; white-space:pre-wrap; }
-  .msg.user { align-self:flex-end; background:var(--accent); color:#fff; }
-  .msg.bot { align-self:flex-start; background:#f0f0ec; }
-  .msg.sys { align-self:center; background:#fdeee6; color:var(--warn); font-size:13px; }
-  .msg .src { font-size:11px; opacity:.75; margin-bottom:2px; }
-  .tool { align-self:flex-start; font-size:12px; color:var(--muted); padding-left:6px; }
-  form { display:flex; gap:8px; margin-top:10px; }
-  input[type=text] { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
-  #rules { font-size:13px; color:var(--muted); margin-top:8px; }
-  #notice { display:none; background:#fff7e6; border:1px solid #f3d19e; color:#8a5a00; padding:10px 14px; margin:12px 16px 0; border-radius:8px; font-size:13px; }
-  @media (max-width:900px) { main { grid-template-columns:1fr; height:auto; } }
+  main.desk { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px;
+              height: calc(100vh - 59px); }
+  .col { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+
+  /* 画面：深色取景框，四角刻线提示这是监控画面 */
+  .viewport { position: relative; background: #0f171f; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; }
+  .viewport video, .viewport img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .viewport canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .viewport .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #8696a5; }
+  .viewport::after { content: ""; position: absolute; inset: 10px; pointer-events: none;
+    background:
+      linear-gradient(#8fb8dc, #8fb8dc) top left / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) top left / 2px 18px no-repeat,
+      linear-gradient(#8fb8dc, #8fb8dc) top right / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) top right / 2px 18px no-repeat,
+      linear-gradient(#8fb8dc, #8fb8dc) bottom left / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) bottom left / 2px 18px no-repeat,
+      linear-gradient(#8fb8dc, #8fb8dc) bottom right / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) bottom right / 2px 18px no-repeat;
+    opacity: .55; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+  .controls .spacer { flex: 1; }
+  .meter { width: 110px; height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+  .meter div { height: 100%; width: 0; background: var(--lamp-ok); transition: width .08s; }
+
+  /* 现场配置：一条横栏，两项之间用竖线分开 */
+  .setup { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border: 1px solid var(--rule);
+           border-left: 4px solid var(--steel); border-radius: 6px; }
+  .setup > div { padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .setup > div + div { border-left: 1px solid var(--rule); }
+  .setup h3 { margin: 0; font-size: 15px; }
+  .setup p { margin: 0; color: var(--ink-2); font-size: 13px; flex: 1; }
+  .setup p b { color: var(--ink); font-family: var(--digits); font-size: 16px; font-weight: 600; }
+  .setup a.go { align-self: flex-start; margin-top: 4px; padding: 6px 14px; border-radius: 4px; background: var(--steel);
+                color: #fff; text-decoration: none; font-size: 13px; }
+  .setup a.go:hover { background: #1b4366; }
+  .setup .empty { color: var(--lamp-busy); }
+
+  .timeline { flex: 1; min-height: 140px; display: flex; flex-direction: column; }
+  .list { overflow-y: auto; flex: 1; font-size: 13px; }
+  .tl-item { padding: 6px 0; border-bottom: 1px solid #e3e8ec; display: flex; gap: 10px; }
+  .tl-item .t { color: var(--ink-2); font-family: var(--digits); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .tl-item .anom { color: var(--lamp-alert); }
+
+  /* 指令区 */
+  .command { display: flex; flex-direction: column; min-height: 0; }
+  #chat { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; }
+  .msg { max-width: 88%; padding: 8px 12px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; border-radius: 6px; }
+  .msg.user { align-self: flex-end; background: var(--steel); color: #fff; border-bottom-right-radius: 0; }
+  .msg.bot { align-self: flex-start; background: #fff; border: 1px solid var(--rule); border-bottom-left-radius: 0; }
+  .msg.sys { align-self: stretch; background: #fdf0ee; color: #8a2a20; border-left: 3px solid var(--lamp-alert); font-size: 13px; border-radius: 0; }
+  .msg .src { font-size: 11px; opacity: .75; margin-bottom: 2px; }
+  .tool { align-self: flex-start; font-size: 12px; color: var(--ink-2); padding-left: 2px; font-family: var(--digits); }
+  #rules { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  form#form { display: flex; gap: 8px; margin-top: 10px; }
+  form#form input { font-size: 15px; padding: 10px 12px; }
+  form#form button { flex: 0 0 auto; white-space: nowrap; padding: 0 20px; }
+  #chat:empty::before { content: "说话或在下方输入指令，例如：画面里有几个人？桌上的保温杯是什么颜色？上午 9 点左右发生了什么？有人离开座位就提醒我。";
+    margin: auto 0; padding: 0 12%; text-align: center; color: var(--ink-2); line-height: 1.9; }
+  #timeline:empty::before { content: "后台每隔几秒记录一次画面，开启摄像头后会出现在这里。"; color: var(--ink-2); }
+  #btn-ptt.primary { min-width: 104px; }
+
+  @media (max-width: 960px) {
+    main.desk { grid-template-columns: 1fr; height: auto; }
+    .command { min-height: 70vh; }
+  }
+  @media (max-width: 520px) { .setup { grid-template-columns: 1fr; } .setup > div + div { border-left: 0; border-top: 1px solid var(--rule); } }
 </style>
 </head>
 <body>
-<header>
-  <h1>浏览器测试 · 实时语音视频分析智能体</h1>
-  <span id="pill-conn" class="pill">未连接</span>
-  <span id="pill-cam" class="pill">摄像头关闭</span>
-  <span id="pill-mic" class="pill">麦克风关闭</span>
-  <span id="pill-state" class="pill">空闲</span>
+<header class="duty">
+  <span class="brand">监控值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser" aria-current="page">监控</a>
+    <a href="/scene">场景包</a>
+    <a href="/knowledge">知识库</a>
+  </nav>
+  <div class="lamps">
+    <span id="pill-conn" class="pill">未连接</span>
+    <span id="pill-cam" class="pill">摄像头关闭</span>
+    <span id="pill-mic" class="pill">麦克风关闭</span>
+    <span id="pill-state" class="pill">空闲</span>
+  </div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
 </header>
 <div id="notice"></div>
-<main>
-  <section class="left">
-    <div class="card" style="flex:0 0 auto">
-      <div class="video-wrap">
+<main class="desk">
+  <section class="col">
+    <div class="panel">
+      <div class="viewport">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
         <div id="placeholder" class="placeholder">点击下方“开启摄像头”</div>
       </div>
       <div class="controls">
         <button id="btn-cam" class="primary">开启摄像头</button>
-        <select id="sel-cam" title="选择摄像头"></select>
-        <label>上传频率
-          <select id="sel-fps">
-            <option value="1">1 帧/秒</option>
-            <option value="2" selected>2 帧/秒</option>
-            <option value="5">5 帧/秒</option>
-          </select>
-        </label>
-        <span style="flex:1"></span>
+        <select id="sel-cam" title="选择摄像头" aria-label="选择摄像头"></select>
+        <select id="sel-fps" title="画面上传频率" aria-label="画面上传频率">
+          <option value="1">每秒 1 帧</option>
+          <option value="2" selected>每秒 2 帧</option>
+          <option value="5">每秒 5 帧</option>
+        </select>
+        <span class="spacer"></span>
         <button id="btn-mic" class="primary">开启麦克风</button>
         <button id="btn-ptt" type="button" style="display:none" title="也可以按住空格键说话">按住说话</button>
         <div class="meter" title="麦克风音量"><div id="meter"></div></div>
       </div>
     </div>
-    <div class="card" style="flex:1">
-      <h2>画面时间线（后台观察）</h2>
+
+    <div class="setup" aria-label="现场配置">
+      <div>
+        <h3>场景包</h3>
+        <p id="setup-scene">正在读取…</p>
+        <a class="go" href="/scene">管理场景包</a>
+      </div>
+      <div>
+        <h3>知识库</h3>
+        <p id="setup-kb">正在读取…</p>
+        <a class="go" href="/knowledge">上传和管理文档</a>
+      </div>
+    </div>
+
+    <div class="panel timeline">
+      <h2>画面时间线</h2>
       <div id="timeline" class="list"></div>
     </div>
   </section>
-  <section class="card">
-    <h2>指令（语音或打字）</h2>
+
+  <section class="panel command">
+    <h2>指令</h2>
     <div id="chat"></div>
     <div id="rules"></div>
     <form id="form">
-      <input id="input" type="text" placeholder="例如：画面里有几个人？表上读数多少？今天上午9点左右发生了什么？有人离开就提醒我" autocomplete="off">
+      <input id="input" type="text" placeholder="说话或在这里输入，如：画面里有几个人？上午 9 点左右发生了什么？" autocomplete="off">
       <button class="primary" type="submit">发送</button>
     </form>
     <div class="controls">
       <button id="btn-stop" type="button">打断</button>
       <button id="btn-reset" type="button">清空对话</button>
-      <span style="flex:1"></span>
-      <a href="/scene" style="font-size:12px;color:var(--muted)">场景包管理</a>
-      <a href="/knowledge" style="font-size:12px;color:var(--muted)">知识库</a>
-      <a href="/" style="font-size:12px;color:var(--muted)">服务端摄像头页面</a>
+      <span class="spacer"></span>
+      <a href="/" class="hint">服务端摄像头页面</a>
     </div>
   </section>
 </main>
+<script src="/static/console.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
@@ -402,6 +447,26 @@ $("btn-mic").onclick = async () => {
   try { await startMic(); }
   catch (e) { stopMic(); notice("无法开启语音：" + e.message); }
 };
+
+// ============================================================ 现场配置概况
+async function loadSetup() {
+  const sceneEl = $("setup-scene"), kbEl = $("setup-kb");
+  try {
+    const sc = await (await fetch("/api/scene")).json();
+    const imgs = sc.objects.reduce((n, o) => n + o.images.length, 0);
+    sceneEl.innerHTML = sc.objects.length || sc.description
+      ? `<b>${sc.objects.length}</b> 个特定目标，<b>${imgs}</b> 张参考图，<b>${sc.rules.length}</b> 条规则模板`
+      : '<span class="empty">还没有配置。</span>告诉模型现场有什么、专用设备长什么样。';
+  } catch (e) { sceneEl.textContent = "未开启场景包"; }
+  try {
+    const kb = await (await fetch("/api/knowledge")).json();
+    const ready = kb.documents.filter(d => d.status === "ready").length;
+    kbEl.innerHTML = kb.documents.length
+      ? `<b>${ready}</b> 份文档可用，共 <b>${kb.stats.chunks}</b> 段` + (kb.stats.vector_search ? "，向量检索已开启" : "")
+      : '<span class="empty">还没有文档。</span>上传规章、规程、手册，判断“是否正常、怎么处理”时会查阅。';
+  } catch (e) { kbEl.textContent = "未开启知识库"; }
+}
+loadSetup();
 
 // ============================================================ 启动检查
 let baseTips = [];

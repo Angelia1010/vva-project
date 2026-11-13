@@ -48,6 +48,9 @@ def create_web_app(app: App) -> FastAPI:
             raise HTTPException(status_code=401, detail="ingest token 错误")
 
     # ------------------------------------------------------------ 页面与画面
+    from fastapi.staticfiles import StaticFiles
+    api.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")   # 页面共用的样式和脚本
+
     @api.get("/")
     async def index() -> FileResponse:
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))

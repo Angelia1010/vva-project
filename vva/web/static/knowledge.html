@@ -3,75 +3,126 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>知识库管理</title>
+<title>知识库 - 监控值守台</title>
+<link rel="stylesheet" href="/static/console.css">
 <style>
-  :root { --bg:#f6f6f4; --card:#fff; --line:#e3e2dc; --text:#222; --muted:#777; --accent:#4b5bd6; --warn:#c2410c; --ok:#15803d; }
-  * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--line); background:#fff; }
-  header h1 { font-size:16px; margin:0; }
-  main { max-width:1000px; margin:0 auto; padding:16px; display:grid; gap:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
-  .card h2 { font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:600; }
-  input[type=text], textarea { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:8px; font:inherit; }
-  button { padding:6px 12px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; font-size:13px; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button.danger { color:var(--warn); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
-  th { color:var(--muted); font-weight:600; }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
-  .hint { font-size:12px; color:var(--muted); }
-  .st-ready { color:var(--ok); } .st-error { color:var(--warn); } .st-indexing { color:var(--accent); }
-  .hit { border-top:1px solid var(--line); padding:8px 0; font-size:13px; white-space:pre-wrap; }
-  .hit b { color:var(--accent); }
-  #answer { white-space:pre-wrap; margin-top:8px; }
-  #msg { font-size:13px; } #msg.err { color:var(--warn); } #msg.ok { color:var(--ok); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); gap: 20px; align-items: start; }
+
+  /* 上传区：页面上最显眼的操作 */
+  .drop { display: flex; align-items: center; gap: 18px; padding: 22px 24px; margin-bottom: 16px; cursor: pointer;
+          border: 2px dashed #9aa7b3; border-radius: 6px; background: var(--panel); }
+  .drop:hover, .drop.over { border-color: var(--steel); background: var(--steel-soft); }
+  .drop .glyph { flex: 0 0 auto; width: 46px; height: 56px; border: 2px solid var(--steel); border-radius: 3px; position: relative; }
+  .drop .glyph::before, .drop .glyph::after { content: ""; position: absolute; left: 9px; right: 9px; height: 2px; background: var(--steel); }
+  .drop .glyph::before { top: 18px; } .drop .glyph::after { top: 28px; right: 16px; }
+  .drop strong { display: block; font-size: 16px; }
+  .drop input { display: none; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #e3e8ec; vertical-align: top; }
+  th { color: var(--ink-2); font-weight: 600; border-bottom-color: var(--rule); white-space: nowrap; }
+  td.num { font-family: var(--digits); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td .name { font-weight: 600; word-break: break-all; }
+  td .err { color: var(--lamp-alert); font-size: 12px; margin-top: 2px; }
+  td.ops { white-space: nowrap; text-align: right; }
+  td.ops button { padding: 4px 10px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); }
+  .status.ready::before { background: var(--lamp-ok); }
+  .status.indexing::before { background: var(--lamp-busy); }
+  .status.error::before { background: var(--lamp-alert); }
+  .empty { padding: 24px 8px; text-align: center; color: var(--ink-2); }
+  .summary { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; }
+
+  .tryout { position: sticky; top: 16px; }
+  .tryout .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .answer { margin-top: 14px; padding: 12px 14px; background: #fff; border-left: 4px solid var(--steel); white-space: pre-wrap; display: none; }
+  .answer.none { border-left-color: var(--lamp-busy); }
+  .answer .src { margin-top: 8px; color: var(--ink-2); font-size: 12px; }
+  .hit { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e3e8ec; font-size: 13px; white-space: pre-wrap; }
+  .hit .where { color: var(--steel); font-weight: 600; display: block; margin-bottom: 2px; }
+
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .tryout { position: static; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>知识库管理</h1>
-  <span id="stats" class="hint"></span>
-  <span style="flex:1"></span>
-  <span id="msg"></span>
-  <input id="token" type="text" placeholder="管理口令" style="width:140px;display:none">
-  <a href="/scene" class="hint">场景包</a>
-  <a href="/browser" class="hint">返回测试页</a>
+<header class="duty">
+  <span class="brand">监控值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">监控</a>
+    <a href="/scene">场景包</a>
+    <a href="/knowledge" aria-current="page">知识库</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
 </header>
-<main>
-  <section class="card">
-    <h2>文档</h2>
-    <p class="hint">上传规章制度、操作规程、设备手册、巡检标准等。监控助手遇到“是否正常、规定是什么、怎么处理”的问题时会查阅。
-      支持 <span id="supported"></span>；扫描版 PDF 没有文字层，需要先做文字识别。</p>
-    <div class="row"><input id="file" type="file" multiple><button class="primary" id="btn-upload">上传</button></div>
-    <table style="margin-top:10px"><thead><tr><th>文档</th><th>大小</th><th>段落</th><th>状态</th><th>上传时间</th><th></th></tr></thead>
-      <tbody id="docs"></tbody></table>
-  </section>
 
-  <section class="card">
-    <h2>测试</h2>
-    <input id="q" type="text" placeholder="问题，如：压力表读数多少算异常？">
-    <input id="ctx" type="text" placeholder="可选：现场情况，如：压力表读数 0.62MPa" style="margin-top:6px">
-    <div class="row"><button class="primary" id="btn-ask">问知识库</button><button id="btn-search">只看检索结果</button></div>
-    <div id="answer"></div>
-    <div id="hits"></div>
-  </section>
-</main>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>知识库</h1>
+      <p>上传规章制度、操作规程、设备手册、巡检标准。被问到“是否正常、规定是什么、该怎么处理”时，监控助手会先看画面，再查这里的资料给出判断和出处。</p>
+    </div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="layout">
+    <section>
+      <label class="drop" id="drop" for="file">
+        <span class="glyph" aria-hidden="true"></span>
+        <span>
+          <strong>上传文档</strong>
+          <span class="muted">点击选择或把文件拖到这里，可一次多个。支持 <span id="supported">txt、md、pdf、docx</span>；扫描版 PDF 需要先做文字识别。</span>
+        </span>
+        <input id="file" type="file" multiple>
+      </label>
+
+      <div class="panel">
+        <h2>已上传的文档</h2>
+        <p class="summary" id="summary"></p>
+        <table>
+          <thead><tr><th>文档</th><th>大小</th><th>段落</th><th>状态</th><th>上传时间</th><th></th></tr></thead>
+          <tbody id="docs"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel tryout" aria-labelledby="t-try">
+      <h2 id="t-try">试一试</h2>
+      <p class="hint" style="margin:0">上传后先在这里问几个问题，确认能查到。</p>
+      <label class="field" for="q">问题</label>
+      <input id="q" type="text" placeholder="压力表读数多少算异常？">
+      <label class="field" for="ctx">现场情况<span class="muted">可不填</span></label>
+      <input id="ctx" type="text" placeholder="压力表读数 0.62MPa">
+      <div class="actions">
+        <button class="primary" id="btn-ask">提问</button>
+        <button id="btn-search">查看命中的原文</button>
+      </div>
+      <div class="answer" id="answer"></div>
+      <div id="hits"></div>
+    </section>
+  </div>
+</div>
+
+<script src="/static/console.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = cls || ""; }
-function token() { return $("token").value.trim(); }
-function size(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + "MB" : Math.max(1, Math.round(n / 1024)) + "KB"; }
-const ST = { ready: "可用", indexing: "处理中…", error: "失败" };
+let msgTimer = null;
+function msg(text, cls) {
+  const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || "");
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000);
+}
+function size(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+const STATUS = { ready: "可用", indexing: "处理中", error: "失败" };
 
 async function call(method, url, body, isJson = true) {
-  const headers = { "X-Token": token() };
+  const headers = { "X-Token": adminToken() };
   if (body !== undefined && isJson) headers["Content-Type"] = "application/json";
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : (isJson ? JSON.stringify(body) : body) });
   if (!res.ok) {
-    let d = res.status + ""; try { d = (await res.json()).detail || d; } catch (e) {}
-    if (res.status === 401) $("token").style.display = "";
+    let d = String(res.status); try { d = (await res.json()).detail || d; } catch (e) {}
+    if (res.status === 401) { $("token").style.display = "block"; $("token").focus(); }
     throw new Error(d);
   }
   return res.json();
@@ -79,48 +130,70 @@ async function call(method, url, body, isJson = true) {
 
 let pollTimer = null;
 function render(data) {
-  $("supported").textContent = data.supported.join("、");
-  $("stats").textContent = `${data.documents} 个文档，${data.chunks} 段，` + (data.vector_search ? "关键词 + 向量检索" : "关键词检索");
-  if (data.token_required) $("token").style.display = "";
+  $("supported").textContent = data.supported.filter(x => x !== ".markdown").map(x => x.slice(1)).join("、");
+  if (data.token_required) $("token").style.display = "block";
+  const st = data.stats;
+  $("summary").textContent = st.documents
+    ? `${st.documents} 份文档，${st.chunks} 段。检索方式：${st.vector_search ? "关键词 + 向量" : "关键词（未部署向量模型）"}`
+    : "";
   const tb = $("docs"); tb.innerHTML = "";
-  if (!data.documents.length) tb.innerHTML = '<tr><td colspan="6" class="hint">还没有文档</td></tr>';
+  if (!data.documents.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty">还没有文档。从上方上传第一份规程或手册。</td></tr>';
+  }
   for (const d of data.documents) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td></td><td>${size(d.size)}</td><td>${d.chunks}</td><td class="st-${d.status}"></td><td>${d.created}</td>
-      <td><button class="re">重建</button> <button class="danger del">删除</button></td>`;
-    tr.children[0].textContent = d.name;
-    tr.children[3].textContent = ST[d.status] + (d.error ? "：" + d.error : "");
-    tr.querySelector(".re").onclick = () => act(() => call("POST", `/api/knowledge/${d.id}/reindex`), "已开始重建");
-    tr.querySelector(".del").onclick = () => { if (confirm(`删除《${d.name}》？`)) act(() => call("DELETE", `/api/knowledge/${d.id}`), "已删除"); };
+    tr.innerHTML = `<td><div class="name"></div><div class="err"></div></td><td class="num">${size(d.size)}</td>
+      <td class="num">${d.chunks || "-"}</td><td><span class="status ${d.status}">${STATUS[d.status] || d.status}</span></td>
+      <td class="num">${d.created}</td>
+      <td class="ops"><button class="re" type="button">重建索引</button> <button class="danger del" type="button">删除</button></td>`;
+    tr.querySelector(".name").textContent = d.name;
+    tr.querySelector(".err").textContent = d.error || "";
+    tr.querySelector(".re").onclick = () => act(() => call("POST", `/api/knowledge/${d.id}/reindex`), `正在重建《${d.name}》的索引`);
+    tr.querySelector(".del").onclick = () => { if (confirm(`删除《${d.name}》？`)) act(() => call("DELETE", `/api/knowledge/${d.id}`), `已删除《${d.name}》`); };
     tb.appendChild(tr);
   }
   clearTimeout(pollTimer);
-  if (data.documents.some(d => d.status === "indexing")) pollTimer = setTimeout(refresh, 2000);
+  if (data.documents.some(d => d.status === "indexing")) pollTimer = setTimeout(refresh, 1500);
 }
-async function refresh() { try { render(await call("GET", "/api/knowledge")); } catch (e) { msg("读取失败：" + e.message, "err"); } }
-async function act(fn, ok) { try { render(await fn()); msg(ok, "ok"); } catch (e) { msg("失败：" + e.message, "err"); } }
+async function refresh() {
+  try { render(await call("GET", "/api/knowledge")); }
+  catch (e) { msg("无法读取知识库：" + e.message, "err"); }
+}
+async function act(fn, ok) {
+  try { render(await fn()); msg(ok, "ok"); } catch (e) { msg("操作失败：" + e.message, "err"); }
+}
 
-$("btn-upload").onclick = async () => {
-  const files = $("file").files;
-  if (!files.length) return msg("请先选择文件", "err");
-  for (const f of files) await act(() => call("POST", "/api/knowledge?name=" + encodeURIComponent(f.name), f, false), `已上传《${f.name}》，正在处理`);
-  $("file").value = "";
+async function upload(files) {
+  for (const f of files) {
+    await act(() => call("POST", "/api/knowledge?name=" + encodeURIComponent(f.name), f, false), `已上传《${f.name}》，正在解析`);
+  }
+}
+$("file").onchange = async (e) => { await upload(e.target.files); e.target.value = ""; };
+const drop = $("drop");
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => upload(e.dataTransfer.files));
+
+$("btn-ask").onclick = async () => {
+  const q = $("q").value.trim(); if (!q) { $("q").focus(); return; }
+  const box = $("answer"); box.style.display = "block"; box.className = "answer"; box.textContent = "正在查阅资料…"; $("hits").innerHTML = "";
+  try {
+    const r = await call("POST", "/api/knowledge/ask", { question: q, context: $("ctx").value.trim() });
+    box.className = "answer" + (r.found ? "" : " none"); box.textContent = r.answer;
+    if (r.sources.length) { const s = document.createElement("div"); s.className = "src"; s.textContent = "出处：" + r.sources.join("；"); box.appendChild(s); }
+  } catch (e) { box.style.display = "none"; msg("提问失败：" + e.message, "err"); }
 };
 $("btn-search").onclick = async () => {
-  $("answer").textContent = "";
+  $("answer").style.display = "none";
   try {
     const hits = await call("GET", "/api/knowledge/search?q=" + encodeURIComponent($("q").value));
-    $("hits").innerHTML = hits.length ? "" : '<p class="hint">没有命中</p>';
-    for (const h of hits) { const d = document.createElement("div"); d.className = "hit";
-      d.innerHTML = "<b></b>\n"; d.querySelector("b").textContent = `${h.source}（${h.score}）`; d.append(h.text); $("hits").appendChild(d); }
+    const box = $("hits"); box.innerHTML = hits.length ? "" : '<p class="hint">没有命中的原文，换个说法试试。</p>';
+    for (const h of hits) {
+      const d = document.createElement("div"); d.className = "hit";
+      const w = document.createElement("span"); w.className = "where"; w.textContent = h.source;
+      d.append(w, h.text); box.appendChild(d);
+    }
   } catch (e) { msg("检索失败：" + e.message, "err"); }
-};
-$("btn-ask").onclick = async () => {
-  $("answer").textContent = "查询中…"; $("hits").innerHTML = "";
-  try {
-    const r = await call("POST", "/api/knowledge/ask", { question: $("q").value, context: $("ctx").value });
-    $("answer").textContent = r.answer + (r.sources.length ? "\n出处：" + r.sources.join("；") : "");
-  } catch (e) { $("answer").textContent = ""; msg("查询失败：" + e.message, "err"); }
 };
 refresh();
 </script>

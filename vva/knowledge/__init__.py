@@ -104,6 +104,11 @@ class KnowledgeBase:
     def background_tasks(self) -> list[Coroutine[Any, Any, None]]:
         return [self._resume()]
 
+    def overview(self) -> dict[str, Any]:
+        """管理页用：文档清单 + 统计。"""
+        return {"documents": [d.to_dict() for d in self.list_documents()], "stats": self.stats(),
+                "supported": list(SUPPORTED)}
+
     def stats(self) -> dict[str, Any]:
         docs = self.store.list_documents()
         return {"documents": len(docs), "chunks": sum(d.chunks for d in docs),

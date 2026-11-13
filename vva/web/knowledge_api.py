@@ -17,7 +17,7 @@ import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
-from vva.knowledge import SUPPORTED, KnowledgeBase
+from vva.knowledge import KnowledgeBase
 
 
 def register_knowledge_routes(api: FastAPI, kb: KnowledgeBase, admin_token: str, static_dir: str) -> None:
@@ -26,8 +26,7 @@ def register_knowledge_routes(api: FastAPI, kb: KnowledgeBase, admin_token: str,
             raise HTTPException(401, "需要管理口令")
 
     def listing() -> JSONResponse:
-        return JSONResponse({"documents": [d.to_dict() for d in kb.list_documents()], **kb.stats(),
-                             "supported": list(SUPPORTED), "token_required": bool(admin_token)})
+        return JSONResponse({**kb.overview(), "token_required": bool(admin_token)})
 
     @api.get("/knowledge")
     async def knowledge_page() -> FileResponse:
