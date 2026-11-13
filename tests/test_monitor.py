@@ -383,3 +383,30 @@ def test_look_answer_format_and_scene_hint():
         assert r["answer"] == "画面中有 2 人" and r["confidence"] == "高"
         assert "场景说明：办公室，左侧是 3 号工位" in vlm.requests[0][1] and "问题：几个人" in vlm.requests[0][1]
     asyncio.run(run())
+
+
+def test_look_now_zooms_by_target_not_by_model_coordinates():
+    async def run():
+        from vva.agent.tools import VisionTools
+        from vva.core.types import Frame
+        from vva.perception.timeline import Timeline
+        from vva.video.frame_buffer import FrameBuffer
+        buf = FrameBuffer()
+        buf.add(Frame(image=np.full((720, 1280, 3), 90, np.uint8), ts=time.time()))
+        vlm = FakeVLM(answers={"保温杯": '{"found": true, "objects": [{"label": "保温杯", "box_2d": [100, 500, 300, 900]}]}',
+                               "表盘": '{"found": false, "objects": []}'},
+                      default="依据：x\n结论：粉色保温杯，约 20 厘米高\n把握：中")
+        bus = EventBus()
+        ui = bus.subscribe(TOPIC_UI)
+        tools = VisionTools(buf, vlm, Timeline(), WatchRules(), bus, crop_min_side=0)
+        r = json.loads(await tools.call("look_now", {"question": "杯子多大", "target": "保温杯"}))
+        assert r["zoomed"] == "已定位并放大：保温杯" and r["answer"].startswith("粉色保温杯")
+        assert [e["boxes"][0]["box"] for e in _drain(ui) if e["type"] == "bbox"] == [[0.1, 0.5, 0.3, 0.9]]
+        r = json.loads(await tools.call("look_now", {"question": "读数", "target": "表盘"}))
+        assert "没有定位到“表盘”，已改看整幅画面" == r["zoomed"]
+        # 模型自己编的坐标会被忽略，不再裁剪
+        n = len(vlm.requests)
+        r = json.loads(await tools.call("look_now", {"question": "杯子", "region": [0.45, 0.35, 0.65, 0.55]}))
+        assert "zoomed" not in r and len(vlm.requests) == n + 1
+        assert "region" not in json.dumps(tools.schemas(), ensure_ascii=False)
+    asyncio.run(run())

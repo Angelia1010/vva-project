@@ -136,7 +136,7 @@ def test_agent_tool_loop():
         ui = bus.subscribe(TOPIC_UI)
         llm = FakeLLM([
             [("locate", {"target": "表盘"})],
-            [("look_now", {"question": "读数是多少", "region": [0.3, 0.2, 0.7, 0.8]})],
+            [("look_now", {"question": "读数是多少", "target": "表盘"})],
             "表上读数大约是 42。",
         ])
         agent = Agent(llm, tools, filler_text="我看一下。")

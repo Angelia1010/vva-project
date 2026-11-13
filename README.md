@@ -131,9 +131,9 @@ video:
 
 | 工具 | 作用 |
 |---|---|
-| `look_now(question, region?)` | 看当前画面；带 `region` 时裁剪并放大局部 |
-| `locate(target)` | 定位目标，返回 0~1 的框坐标（同时在网页画面上画框） |
-| `look_back(seconds_ago, question)` | 看过去某一时刻的画面 |
+| `look_now(question, target?)` | 看当前画面；带 `target` 时程序先定位该目标再裁剪放大（坐标不由模型填写，避免裁错） |
+| `locate(target)` | 定位目标，返回 0~1 的框坐标（同时在网页画面上画框），用于回答“在哪里” |
+| `look_back(seconds_ago, question, target?)` | 看过去某一时刻的画面 |
 | `look_sequence(seconds, question, frames)` | 按时间顺序看多帧，判断动作和变化 |
 | `search_timeline(minutes)` | 查最近两小时内后台记录的文字时间线 |
 | `search_memory(start, end, keyword?)` | 按时间段查长期记录（时段摘要、画面记录、提醒、指令），可查到几天前 |
