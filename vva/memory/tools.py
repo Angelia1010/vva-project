@@ -4,13 +4,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from vva.agent import prompts
 from vva.agent.toolkit import ToolProvider, fn_schema as _fn
 from vva.core.bus import EventBus
-from vva.core.jsonutil import strip_think
 from vva.memory.keyframes import KeyframeStore
 from vva.memory.store import KIND_OBSERVATION, MemoryEvent, MemoryStore
 from vva.memory.timeutil import fmt_dt, parse_time
+from vva.perception.look import ask_look
 
 _TIME_DESC = "格式 YYYY-MM-DD HH:MM，例如 2026-11-13 08:45；今天的时间也可以只写 HH:MM"
 
@@ -31,13 +30,14 @@ def _event_text(e: MemoryEvent, now: float) -> str:
 class MemoryTools(ToolProvider):
     def __init__(self, store: MemoryStore, keyframes: KeyframeStore, vlm: Any, bus: EventBus,
                  look_max_gap_s: float = 300, max_events: int = 40, max_notes: int = 50,
-                 look_max_tokens: int = 256, **_: Any) -> None:
+                 look_max_tokens: int = 256, scene_hint: str = "", **_: Any) -> None:
         super().__init__(bus)
         self.store, self.keyframes, self.vlm = store, keyframes, vlm
         self.max_gap = float(look_max_gap_s)
         self.max_events = max(2, int(max_events))
         self.max_notes = int(max_notes)
         self.look_max_tokens = int(look_max_tokens)
+        self.scene_hint = scene_hint
 
     def note_lines(self) -> list[str]:
         """给智能体系统提示词用的备忘列表。"""
@@ -101,9 +101,8 @@ class MemoryTools(ToolProvider):
         jpeg = self.keyframes.load(ev.frame) if ev.frame else None
         if jpeg is None:
             return {"error": "当时的画面文件已被清理"}
-        answer = strip_think(await self.vlm.ask([jpeg], question, system=prompts.LOOK_SYSTEM,
-                                                max_tokens=self.look_max_tokens))
-        return {"time": fmt_dt(ev.ts, now), "record": ev.summary, "answer": answer}
+        result = await ask_look(self.vlm, [jpeg], question, self.scene_hint, self.look_max_tokens)
+        return {"time": fmt_dt(ev.ts, now), "record": ev.summary, **result}
 
     async def tool_remember_note(self, content: str) -> dict:
         if not content or not content.strip():

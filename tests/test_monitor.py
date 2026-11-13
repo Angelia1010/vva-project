@@ -341,3 +341,26 @@ def test_app_records_to_memory(tmp_path):
         assert "search_memory" in {t["function"]["name"] for t in app.tools.schemas()}
         await app.stop()
     asyncio.run(run())
+
+
+# ---------------------------------------------------------------- 看图问答格式
+def test_look_answer_format_and_scene_hint():
+    from vva.perception.look import parse_look_answer
+    r = parse_look_answer("依据：表盘指针在 0.3 和 0.4 之间偏左\n结论：读数约 0.32 毫米\n把握：中")
+    assert r == {"evidence": "表盘指针在 0.3 和 0.4 之间偏左", "answer": "读数约 0.32 毫米", "confidence": "中"}
+    assert parse_look_answer("<think>x</think>画面里有两个人。") == {"answer": "画面里有两个人。"}
+    assert parse_look_answer("**结论**：两人\n把握：低（太远）")["confidence"] == "低"
+
+    async def run():
+        from vva.agent.tools import VisionTools
+        from vva.core.types import Frame
+        from vva.perception.timeline import Timeline
+        from vva.video.frame_buffer import FrameBuffer
+        buf = FrameBuffer()
+        buf.add(Frame(image=np.full((360, 640, 3), 90, np.uint8), ts=time.time()))
+        vlm = FakeVLM(default="依据：工位上坐着两人\n结论：画面中有 2 人\n把握：高")
+        tools = VisionTools(buf, vlm, Timeline(), WatchRules(), EventBus(), scene_hint="办公室，左侧是 3 号工位")
+        r = json.loads(await tools.call("look_now", {"question": "几个人"}))
+        assert r["answer"] == "画面中有 2 人" and r["confidence"] == "高"
+        assert "场景说明：办公室，左侧是 3 号工位" in vlm.requests[0][1] and "问题：几个人" in vlm.requests[0][1]
+    asyncio.run(run())

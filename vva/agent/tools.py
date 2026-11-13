@@ -11,8 +11,9 @@ from typing import Any
 from vva.agent import prompts
 from vva.agent.toolkit import ToolProvider, fn_schema as _fn
 from vva.core.bus import TOPIC_UI, EventBus
-from vva.core.jsonutil import parse_json, strip_think
+from vva.core.jsonutil import parse_json
 from vva.core.types import fmt_ts
+from vva.perception.look import ask_look
 from vva.perception.imaging import (box_to_normalized, crop_region, decode_jpeg, encode_jpeg,
                                     resize_max_side, validate_region)
 from vva.perception.timeline import Timeline, WatchRules
@@ -30,12 +31,13 @@ _REGION_SCHEMA = {
 class VisionTools(ToolProvider):
     def __init__(self, buffer: FrameBuffer, vlm: Any, timeline: Timeline, rules: WatchRules,
                  bus: EventBus, look_max_side: int = 1280, crop_min_side: int = 768,
-                 look_max_tokens: int = 256, **_: Any) -> None:
+                 look_max_tokens: int = 256, scene_hint: str = "", **_: Any) -> None:
         super().__init__(bus)
         self.buffer, self.vlm, self.timeline, self.rules = buffer, vlm, timeline, rules
         self.look_max_side = int(look_max_side)
         self.crop_min_side = int(crop_min_side)
         self.look_max_tokens = int(look_max_tokens)
+        self.scene_hint = scene_hint
 
     # ------------------------------------------------------------------ schema
     def schemas(self) -> list[dict]:
@@ -70,9 +72,8 @@ class VisionTools(ToolProvider):
             img = crop_region(img, region, min_side=self.crop_min_side)
         return encode_jpeg(resize_max_side(img, self.look_max_side), 90)
 
-    async def _ask(self, images: list[bytes], question: str) -> str:
-        return strip_think(await self.vlm.ask(images, question, system=prompts.LOOK_SYSTEM,
-                                              max_tokens=self.look_max_tokens))
+    async def _ask(self, images: list[bytes], question: str) -> dict[str, str]:
+        return await ask_look(self.vlm, images, question, self.scene_hint, self.look_max_tokens)
 
     # ------------------------------------------------------------------ tools
     async def tool_look_now(self, question: str, region: list[float] | None = None) -> dict:
@@ -82,8 +83,8 @@ class VisionTools(ToolProvider):
         reg = validate_region(region)
         if reg:
             self.bus.publish(TOPIC_UI, {"type": "bbox", "boxes": [{"box": reg, "label": "放大区域"}]})
-        answer = await self._ask([self._prepare(bf, reg)], question)
-        return {"time": fmt_ts(bf.ts), "region": reg, "answer": answer}
+        result = await self._ask([self._prepare(bf, reg)], question)
+        return {"time": fmt_ts(bf.ts), "region": reg, **result}
 
     async def tool_locate(self, target: str) -> dict:
         bf = self.buffer.latest_snapshot(max_side=self.look_max_side, quality=90)
@@ -109,8 +110,8 @@ class VisionTools(ToolProvider):
         if bf is None:
             return {"error": "帧缓存中没有那个时间的画面"}
         reg = validate_region(region)
-        answer = await self._ask([self._prepare(bf, reg)], question)
-        return {"time": fmt_ts(bf.ts), "seconds_ago": round(time.time() - bf.ts, 1), "answer": answer}
+        result = await self._ask([self._prepare(bf, reg)], question)
+        return {"time": fmt_ts(bf.ts), "seconds_ago": round(time.time() - bf.ts, 1), **result}
 
     async def tool_look_sequence(self, seconds: float, question: str, frames: int = 4) -> dict:
         frames = min(8, max(2, int(frames or 4)))
@@ -120,8 +121,8 @@ class VisionTools(ToolProvider):
         imgs = [self._prepare(b, None) for b in bfs]
         times = "、".join(fmt_ts(b.ts) for b in bfs)
         q = f"以下 {len(imgs)} 张图片按时间先后排列，拍摄时间依次为：{times}。\n问题：{question}"
-        answer = await self._ask(imgs, q)
-        return {"from": fmt_ts(bfs[0].ts), "to": fmt_ts(bfs[-1].ts), "frames": len(imgs), "answer": answer}
+        result = await self._ask(imgs, q)
+        return {"from": fmt_ts(bfs[0].ts), "to": fmt_ts(bfs[-1].ts), "frames": len(imgs), **result}
 
     async def tool_search_timeline(self, minutes: float = 10) -> dict:
         entries = self.timeline.query(float(minutes or 10))

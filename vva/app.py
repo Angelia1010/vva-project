@@ -52,7 +52,8 @@ class App:
         self.memory = None
         if cfg["memory"].get("enabled", True):
             from vva.memory import LongTermMemory
-            mem_cfg = {"look_max_tokens": cfg["agent"]["look_max_tokens"], **cfg["memory"]}
+            mem_cfg = {"look_max_tokens": cfg["agent"]["look_max_tokens"],
+                       "scene_hint": cfg["agent"].get("scene_hint", ""), **cfg["memory"]}
             self.memory = LongTermMemory(mem_cfg, self.bus, self.llm, self.vlm)
             self.memory.attach_rules(self.rules)
         self.tools = ToolSet(vision_tools, self.memory.tools if self.memory else None)
