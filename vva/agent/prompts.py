@@ -139,3 +139,11 @@ KNOWLEDGE_PROMPT = """资料片段：
 {excerpts}
 
 {context}问题：{question}"""
+
+SKILLS_BLOCK = """
+## 技能
+{always}{catalog}"""
+
+SKILLS_CATALOG = """可用技能（问题涉及某个技能时，先用 load_skill 加载它，读完里面的做法和标准再回答；同一会话里加载过的不必重复加载）：
+{items}
+"""

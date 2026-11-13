@@ -62,11 +62,12 @@ class App:
         self.rules = WatchRules()
         vision_tools = VisionTools(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
 
-        # 场景包（可关闭）
-        self.scene = None
-        if cfg["scene"].get("enabled", True):
-            from vva.scene import SceneManager
-            self.scene = SceneManager(cfg["scene"])
+        # 技能（可关闭）
+        self.skills = None
+        if cfg["skills"].get("enabled", True):
+            from vva.skills import SkillManager
+            self.skills = SkillManager(cfg["skills"], cfg["video"].get("source_id", "cam0"))
+            self.skills.load_plugins(self.buffer, self.vlm, self.bus)
 
         # 长期记忆（可关闭）
         self.memory = None
@@ -83,23 +84,26 @@ class App:
             embedder = clients.EmbeddingModel(m["embedding"]) if m["embedding"].get("model") else None
             self.knowledge = KnowledgeBase(cfg["knowledge"], self.llm, embedder, self.bus)
 
-        if self.scene:
-            self.scene.apply_rules(self.rules)
-            self.scene.on_change(lambda: self.scene.apply_rules(self.rules))   # 网页上新增的规则模板立即生效
-        self.tools = ToolSet(vision_tools, self.memory.tools if self.memory else None,
-                             self.scene.tools(self.buffer, self.vlm, self.bus, **cfg["agent"]) if self.scene else None,
+        skill_tools = None
+        if self.skills:
+            from vva.skills import SkillTools
+            skill_tools = SkillTools(self.skills, self.buffer, self.vlm, self.bus, **cfg["agent"])
+            self.skills.apply_rules(self.rules)
+            self.skills.on_change(lambda: self.skills.apply_rules(self.rules))   # 网页上新增的规则模板立即生效
+        self.tools = ToolSet(vision_tools, self.memory.tools if self.memory else None, skill_tools,
                              self.knowledge.tools if self.knowledge else None)
         self.agent = Agent(self.llm, self.tools, **cfg["agent"],
                            notes_provider=self.memory.tools.note_lines if self.memory else None)
-        if self.scene:
-            self.agent.extra_prompt = self.scene.ctx.prompt_block
+        if self.skills:
+            self.agent.extra_prompt = self.skills.prompt_block
+            self.agent.tool_visible = self.skills.tool_visible
         self.conversations = ConversationStore(cfg["agent"]["max_history_turns"])
         obs_cfg = dict(cfg["observer"])
         if not obs_cfg.get("scene_hint"):
             obs_cfg["scene_hint"] = cfg["agent"].get("scene_hint", "")
-        if self.scene:
-            obs_cfg["hint_provider"] = self.scene.ctx.observer_hint
-            obs_cfg["references"] = self.scene.ctx.references_for_text
+        if self.skills:
+            obs_cfg["hint_provider"] = self.skills.observer_hint
+            obs_cfg["references"] = self.skills.references_for_text
         self.observer = Observer(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **obs_cfg) \
             if obs_cfg.get("enabled", True) else None
 
@@ -113,14 +117,14 @@ class App:
             from vva.audio.vad import VADSegmenter
             from vva.voice.session import VoiceSession
             self.asr = asr or self._make_asr()
-            if self.scene:     # 场景包里的术语、目标名作为语音识别热词，场景包修改后自动更新
+            if self.skills:     # 技能里的热词、目标名作为语音识别热词，修改后自动更新
                 base_prompt = m["asr"].get("prompt") or ""
 
                 def _update_hotwords() -> None:
-                    words = self.scene.ctx.asr_prompt()
+                    words = self.skills.asr_prompt()
                     m["asr"]["prompt"] = "，".join(x for x in (base_prompt, words) if x)
                 _update_hotwords()
-                self.scene.on_change(_update_hotwords)
+                self.skills.on_change(_update_hotwords)
             self.tts = tts or clients.TextToSpeech(m["tts"])
             self.audio_in = create_audio_input(cfg["audio"]["input"])
             self.audio_out = create_audio_output(cfg["audio"]["output"], self.tts.sample_rate)

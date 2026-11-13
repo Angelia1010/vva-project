@@ -27,9 +27,11 @@ vva/
                recorder.py   订阅事件写入记忆、按期限清理
                summarizer.py 每 10 分钟生成时段摘要
                tools.py      search_memory / look_at_time / remember_note 等工具
-  scene/       场景包 ── store.py    目录读写（scene.yaml + 目标参考图）
-               context.py  提示词、目标匹配、参考图、语音热词
-               tools.py    compare_with_reference 工具
+  skills/      技能 ── model.py    数据结构
+               store.py    目录读写（SKILL.md、目标与参考图）、旧版场景包迁移
+               manager.py  启用与摄像头过滤、技能目录与常驻正文、加载状态、专用工具、参考图、热词、规则
+               tools.py    load_skill / compare_with_reference / 各技能的专用工具
+               plugin.py   技能专用工具的基类
   knowledge/   领域知识库子智能体 ── parsing.py 文档解析与切分（txt/md/pdf/docx）
                store.py     SQLite 存储
                retriever.py 关键词（BM25）+ 可选向量检索，排名融合
@@ -40,8 +42,8 @@ vva/
                feishu/     飞书：长连接收消息、问答/指令/语音、告警卡片、定时报告、权限
   voice/       语音会话（断句→识别→过滤→播报、打断、唤醒词、按住说话）
   app.py       编排：把以上模块组装起来
-  web/         网页服务与测试页面（/browser 测试页、/scene 场景包管理、/knowledge 知识库管理）
-scenes/        场景包（example/ 为示例；实际使用 scenes/default/，不纳入 git）
+  web/         网页服务与测试页面（/browser 监控、/skills 技能管理、/knowledge 知识库管理）
+skills/        技能目录（示例-设备间读表/ 为示例，默认停用；其他技能不纳入 git）
 examples/      自定义摄像头引擎、跨进程推帧/推音频示例
 tests/         用假模型跑通全流程的测试
 ```
@@ -177,16 +179,29 @@ video:
 网页（含语音）共用一个会话；飞书每个群、每个私聊各一个会话，上下文互不干扰。
 没有修改权限的会话（飞书 `admin_users` 以外的人）看不到也调用不了修改提醒规则、备忘的工具。
 
-### 场景包（`scene`）
+### 技能（`skills`）
 
-用“参考图 + 文字描述 + 判断标准 + 规则模板 + 热词”适配具体现场，不需要训练模型。在网页 `/scene` 页面管理，
-数据保存在 `scenes/default/`：
+每个技能是针对某类任务的一套做法，放在 `skills/<技能名>/` 下，可以同时启用多个，在网页 `/skills` 管理：
 
-- **场景说明、区域命名、判断标准**：写进智能体和后台观察的提示词
-- **特定目标**（名称、别名、外观、正常/异常状态、2~3 张参考图）：智能体用 `compare_with_reference` 对照参考图判断；
-  监控规则提到这些目标时，后台观察也会带上参考图
-- **规则模板**：自动加入监控提醒
-- **热词**：连同目标名称一起交给语音识别，提高专业术语识别率
+```
+skills/设备间读表/
+  SKILL.md          开头 YAML：name、description（什么时候用）、enabled、always、cameras、hotwords、rules
+                    正文：判断方法、标准、注意事项（Markdown）
+  objects/压力表/   object.yaml（名称、别名、外观、正常/异常状态）+ ref_01.jpg 等参考图
+  tools.py          可选：专用工具（继承 vva.skills.plugin.SkillToolProvider），只能在服务器上放置
+```
+
+**按需加载**：智能体平时只看到已启用技能的名称、用途描述和目标名称；问题涉及某个技能时调用 `load_skill` 读取正文，
+按里面的方法处理。技能自带的专用工具在加载后才出现在工具列表里（同一会话内一直可用，清空对话后需要重新加载）。
+`always: true` 的常驻技能正文每次都带上，适合简短的现场概况。
+
+- **特定目标**：`compare_with_reference` 把参考图和当前画面一起交给看图模型判断；监控规则提到这些目标时，后台观察也带上参考图
+- **规则模板**：已启用技能里启用的规则自动加入监控提醒
+- **热词**：连同目标名称交给语音识别
+- **摄像头**：`cameras` 留空表示所有摄像头，填了就只对这些摄像头（`video.source_id`）生效
+- **专用工具**：阈值比较、换算这类规则性判断写成代码，比让模型自己判断更稳定；示例见 `skills/示例-设备间读表/tools.py`
+
+旧版场景包（`scenes/default/`）会在第一次启动时自动转换成常驻技能“现场概况”，原目录保留不动。
 
 适合外观有特点的专用设备、指示灯、工服工牌、特定标识；不适合区分外观相近的型号、精确计数，也不用于识别具体是哪个人。
 

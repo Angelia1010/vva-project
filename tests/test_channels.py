@@ -1,4 +1,4 @@
-"""多会话、场景包、飞书入口的测试（飞书用假的 API 和事件，不需要 lark-oapi 和网络）。"""
+"""多会话、飞书入口的测试（飞书用假的 API 和事件，不需要 lark-oapi 和网络）。"""
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +16,6 @@ sys.path.insert(0, ROOT)
 from tests.fakes import FakeLLM, FakeVLM  # noqa: E402
 from vva.agent.agent import Agent  # noqa: E402
 from vva.agent.conversation import ConversationStore  # noqa: E402
-from vva.agent.toolkit import ToolSet  # noqa: E402
 from vva.agent.tools import VisionTools  # noqa: E402
 from vva.app import WEB_SESSION, App, Reply  # noqa: E402
 from vva.channels import build_channels  # noqa: E402
@@ -28,10 +27,7 @@ from vva.core import turn  # noqa: E402
 from vva.core.bus import TOPIC_ALERT, TOPIC_UI, EventBus  # noqa: E402
 from vva.core.config import load_config  # noqa: E402
 from vva.core.types import Frame  # noqa: E402
-from vva.perception.imaging import encode_jpeg  # noqa: E402
-from vva.perception.observer import Observer  # noqa: E402
 from vva.perception.timeline import Timeline, WatchRules  # noqa: E402
-from vva.scene import SceneManager  # noqa: E402
 from vva.video.frame_buffer import FrameBuffer  # noqa: E402
 
 
@@ -88,7 +84,7 @@ def _app(tmp_path, llm, vlm=None, **cfg_over):
     cfg["video"]["type"] = "push"
     cfg["observer"]["enabled"] = False
     cfg["memory"]["dir"] = str(tmp_path / "memory")
-    cfg["scene"]["dir"] = str(tmp_path / "scene")
+    cfg["skills"]["dir"] = str(tmp_path / "skills")
     cfg["knowledge"]["dir"] = str(tmp_path / "knowledge")
     for k, v in cfg_over.items():
         cfg[k].update(v)
@@ -111,91 +107,6 @@ def test_app_ask_returns_answer_with_attachments(tmp_path):
         assert sessions == {"feishu:g1"}
         app.add_note("feishu:g1", "提醒：有人离开")
         assert app.conversations.get("feishu:g1").messages[-1]["content"] == "提醒：有人离开"
-        await app.stop()
-    asyncio.run(run())
-
-
-# ---------------------------------------------------------------- 场景包
-def _jpeg(v=120):
-    return encode_jpeg(_img(v))
-
-
-def test_scene_store_and_context(tmp_path):
-    sm = SceneManager({"dir": str(tmp_path / "s"), "max_ref_images": 2})
-    store = sm.store
-    store.save_scene(description="设备间", areas={"右上方": "压力表"}, hotwords=["兆帕"],
-                     standards=["压力 0.2~0.5 兆帕为正常"], rules=[{"condition": "有人进入画面", "cooldown_s": 300}])
-    store.save_object("压力表", aliases=["表盘"], description="白色圆表", normal="0.2~0.5", abnormal="超过 0.6")
-    for v in (10, 20, 30):
-        store.add_image("压力表", _jpeg(v))
-    assert store.scene.objects["压力表"].images == ["ref_01.jpg", "ref_02.jpg", "ref_03.jpg"]
-    # 重新加载后内容一致
-    sm2 = SceneManager({"dir": str(tmp_path / "s")})
-    assert sm2.store.scene.standards == ["压力 0.2~0.5 兆帕为正常"] and "压力表" in sm2.store.scene.objects
-    block = sm.ctx.prompt_block()
-    assert "设备间" in block and "右上方是压力表" in block and "【压力表】（也叫表盘）" in block
-    assert sm.ctx.find("表盘").name == "压力表" and sm.ctx.match("看看表盘读数")[0].name == "压力表"
-    assert len(sm.ctx.references(store.scene.objects["压力表"])) == 2           # max_ref_images
-    assert sm.ctx.asr_prompt() == "兆帕、压力表、表盘"
-    rules = WatchRules()
-    assert sm.apply_rules(rules) == 1 and sm.apply_rules(rules) == 0           # 不重复添加
-    assert store.delete_image("压力表", "ref_02.jpg") and not store.delete_image("压力表", "../x.jpg")
-    assert store.delete_object("压力表") and sm.ctx.prompt_block().count("【") == 0
-
-
-def test_compare_with_reference_tool(tmp_path):
-    async def run():
-        sm = SceneManager({"dir": str(tmp_path / "s")})
-        buf = FrameBuffer()
-        buf.add(Frame(image=_img(), ts=time.time()))
-        vlm = FakeVLM(default="依据：指针在 0.3\n结论：读数约 0.3 兆帕，正常\n把握：中")
-        tools = sm.tools(buf, vlm, EventBus())
-        assert tools.schemas() == []                                       # 没有目标时不提供工具
-        sm.store.save_object("压力表", description="白色圆表")
-        sm.store.add_image("压力表", _jpeg())
-        assert tools.schemas()[0]["function"]["name"] == "compare_with_reference"
-        ts = ToolSet(tools)                                                  # 运行中新增目标后也能调用
-        r = json.loads(await ts.call("compare_with_reference", {"target": "压力表", "question": "读数正常吗"}))
-        assert r["answer"].startswith("读数约 0.3") and r["reference_images"] == 1
-        n_images, prompt = vlm.requests[-1]
-        assert n_images == 2 and "前 1 张图是“压力表”的参考图" in prompt
-        r = json.loads(await ts.call("compare_with_reference", {"target": "叉车", "question": "x"}))
-        assert "没有“叉车”" in r["error"]
-    asyncio.run(run())
-
-
-def test_observer_uses_reference_images_for_rules(tmp_path):
-    async def run():
-        sm = SceneManager({"dir": str(tmp_path / "s")})
-        sm.store.save_object("访客工牌", description="红色挂绳")
-        sm.store.add_image("访客工牌", _jpeg())
-        sm.store.save_scene(description="前台")
-        buf = FrameBuffer()
-        buf.add(Frame(image=_img()))
-        rules = WatchRules()
-        rules.add("出现佩戴访客工牌的人")
-        vlm = FakeVLM(default=json.dumps({"summary": "前台有人", "people_count": 1}, ensure_ascii=False))
-        obs = Observer(buf, vlm, Timeline(), rules, EventBus(), hint_provider=sm.ctx.observer_hint,
-                       references=sm.ctx.references_for_text)
-        await obs.step()
-        n, prompt = vlm.requests[0]
-        assert n == 2 and "图1是“访客工牌”的参考图1" in prompt and "场景说明：前台" in prompt
-    asyncio.run(run())
-
-
-def test_app_scene_wiring(tmp_path):
-    async def run():
-        llm = FakeLLM(["好。"])
-        app = _app(tmp_path, llm)
-        app.scene.store.save_object("叉车充电桩", description="绿色柜体")
-        app.scene.changed()
-        await app.handle_user_text("看看")
-        await app._turn
-        system = llm.calls[0][0]["content"]
-        assert "## 场景包" in system and "叉车充电桩" in system
-        app.scene.store.save_scene(rules=[{"condition": "充电桩亮红灯"}])
-        app.scene.changed()
-        assert [r.condition for r in app.rules.list()] == ["充电桩亮红灯"]      # 网页上新增规则模板立即生效
         await app.stop()
     asyncio.run(run())
 

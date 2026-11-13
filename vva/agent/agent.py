@@ -52,7 +52,9 @@ class Agent:
         self.notes_provider = notes_provider
         self.force_tool_first = bool(force_tool_first)
         self.default = Conversation("default", self.max_history_turns)
-        self.extra_prompt: Callable[[], str] | None = None   # 追加到系统提示词的内容（如场景包）
+        self.extra_prompt: Callable[[], str] | None = None   # 追加到系统提示词的内容（如技能目录）
+        # 判断某个工具在当前会话是否可见（如技能专用工具要先加载技能）：(会话消息, 工具名) -> bool
+        self.tool_visible: Callable[[list[dict[str, Any]], str], bool] | None = None
 
     def _system(self) -> dict[str, Any]:
         hint = f"\n## 场景说明\n{self.scene_hint}" if self.scene_hint else ""
@@ -64,8 +66,14 @@ class Agent:
             now=now_text(), max_chars=max(10, self.max_answer_chars // 2),
             notes=notes_block, scene_hint=hint) + extra}
 
-    def _schemas(self, conv: Conversation) -> list[dict]:
-        return [s for s in self.tools.schemas() if s["function"]["name"] not in conv.excluded_tools]
+    def _allowed(self, conv: Conversation, messages: list[dict[str, Any]], name: str) -> bool:
+        if name in conv.excluded_tools:
+            return False
+        return self.tool_visible is None or self.tool_visible(messages, name)
+
+    def _schemas(self, conv: Conversation, turn: list[dict[str, Any]] | None = None) -> list[dict]:
+        messages = [*conv.messages, *(turn or [])]
+        return [s for s in self.tools.schemas() if self._allowed(conv, messages, s["function"]["name"])]
 
     # 不指定会话时使用默认会话（单会话场景和测试）
     @property
@@ -87,7 +95,7 @@ class Agent:
         final_text = ""
         for round_idx in range(self.max_tool_rounds + 1):
             # 最后一轮不再提供工具，强制模型给出回答
-            tools = self._schemas(conv) if round_idx < self.max_tool_rounds else None
+            tools = self._schemas(conv, turn) if round_idx < self.max_tool_rounds else None
             choice = "required" if round_idx == 0 and self.force_tool_first and tools else "auto"
             parts: list[str] = []
             calls: list[dict[str, str]] = []
@@ -125,6 +133,9 @@ class Agent:
                 log.info("调用工具 %s %s", name, args)
                 if name in conv.excluded_tools:
                     result = json.dumps({"error": "当前会话没有修改权限"}, ensure_ascii=False)
+                elif not self._allowed(conv, [*conv.messages, *turn], name):
+                    result = json.dumps({"error": f"{name} 当前不可用（技能专用工具需要先用 load_skill 加载对应技能）"},
+                                        ensure_ascii=False)
                 else:
                     result = await self.tools.call(name, args)
                 turn.append({"role": "tool", "tool_call_id": c["id"], "content": result})

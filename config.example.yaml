@@ -128,11 +128,11 @@ memory:
   keyframe_retention_days: 7
   summary_minutes: 10         # 每 10 分钟生成一段摘要；0 表示不生成
 
-# ---------------------------------------------------------------- 场景包
-# 在网页 /scene 页面管理；数据在 dir 目录（scene.yaml + objects/<目标>/参考图）
-scene:
+# ---------------------------------------------------------------- 技能
+# 在网页 /skills 页面管理；每个技能一个目录（SKILL.md + objects/ + 可选 tools.py）
+skills:
   enabled: true
-  dir: scenes/default
+  dir: skills
   max_ref_images: 3
 
 # ---------------------------------------------------------------- 领域知识库
@@ -159,7 +159,7 @@ channels:
     web_url: ""              # 卡片上“查看现场”按钮的链接
 
 web:
-  admin_token: ""       # 场景包管理页的修改口令，为空则不校验
+  admin_token: ""       # 技能、知识库管理页的修改口令，为空则不校验
   host: 0.0.0.0
   port: 8000
   ingest_token: ""      # 设置后，外部推流需带 X-Token 请求头（音频 WebSocket 用 ?token=）

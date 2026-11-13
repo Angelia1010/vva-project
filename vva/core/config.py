@@ -88,11 +88,13 @@ DEFAULTS: dict[str, Any] = {
         "ignore_phrases": None,      # 要丢弃的识别结果（语气词、常见误识别）；None 用内置列表
         "ptt_min_ms": 300,           # 按住说话时，短于该时长的按下视为误触
     },
-    "scene": {
+    "skills": {
         "enabled": True,
-        "dir": "scenes/default",     # 场景包目录（相对于启动目录），可在网页 /scene 页面管理
+        "dir": "skills",             # 技能目录（相对于启动目录），可在网页 /skills 页面管理
+        "legacy_scene_dir": "scenes/default",   # 旧版场景包：技能目录为空时自动转换成“现场概况”技能
         "max_ref_images": 3,         # 每个目标最多带几张参考图
         "max_objects_per_call": 2,   # 一次判断最多涉及几个目标（8B 模型一次最多 8 张图）
+        "always_max_chars": 800,     # 常驻技能正文写进提示词的最大字数
     },
     "knowledge": {
         "enabled": True,
@@ -134,7 +136,7 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "web": {"host": "0.0.0.0", "port": 8000, "mjpeg_fps": 10, "ingest_token": "",
-            "admin_token": "",       # 场景包管理页的修改口令；为空则不校验
+            "admin_token": "",       # 技能、知识库管理页的修改口令；为空则不校验
             "ssl_certfile": "", "ssl_keyfile": ""},
 }
 
