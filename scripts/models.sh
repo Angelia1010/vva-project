@@ -14,7 +14,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${MODELS_ENV:-$ROOT/scripts/models.env}"
 # shellcheck disable=SC1090
 source "$ENV_FILE"
-MODEL_HOST="${MODEL_HOST:-127.0.0.1}"     # 只给本机的智能体服务用；需要远程调用可改 0.0.0.0
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib_models.sh"      # 启动参数（与 install_systemd.sh 共用）
 READY_TIMEOUT="${READY_TIMEOUT:-1800}"    # 首次启动要下载模型，等待时间放宽
 LOG_DIR="$ROOT/logs"; RUN_DIR="$ROOT/run"
 mkdir -p "$LOG_DIR" "$RUN_DIR"
@@ -42,11 +43,13 @@ launch() {   # launch <name> <venv> <gpu> <命令...>
   need_venv "$venv"
   local log="$LOG_DIR/$name.log"
   echo "启动 $name（GPU $gpu，端口 $(port_of "$name")），日志：$log"
+  echo "  命令：vllm $(render_args "${@:2}")"
   (
     # shellcheck disable=SC1091
     source "$venv/bin/activate"
     export PATH="$venv/bin:$PATH"
-    export CUDA_VISIBLE_DEVICES="$gpu"
+    export CUDA_VISIBLE_DEVICES="$gpu"      # 可以是多张卡，如 0,1（张量并行）
+    apply_extra_env
     exec setsid "$@" >>"$log" 2>&1 < /dev/null
   ) &
   echo $! > "$RUN_DIR/$name.pid"
@@ -66,29 +69,13 @@ wait_ready() {   # wait_ready <name>
 }
 
 start_vlm() {
-  launch vlm "$VLLM_VENV" "$VLM_GPU" \
-    vllm serve "$VLM_MODEL" --served-model-name "$VLM_NAME" \
-      --host "$MODEL_HOST" --port "$VLM_PORT" \
-      --max-model-len "$VLM_MAX_LEN" \
-      --limit-mm-per-prompt "{\"image\": $VLM_MAX_IMAGES, \"video\": 0}" \
-      --gpu-memory-utilization "$VLM_GPU_UTIL" \
-      --enable-auto-tool-choice --tool-call-parser hermes \
-      ${VLM_EXTRA_ARGS:-}
-}
-
-tts_eager_arg() {
-  # --enforce-eager 关闭 CUDA graph：启动更稳，但合成首包明显变慢（实测约 17 秒）。
-  # 在 models.env 里设 TTS_ENFORCE_EAGER=0 可去掉它来提速；去掉后起不来再改回 1。
-  [ "${TTS_ENFORCE_EAGER:-1}" = "1" ] && echo "--enforce-eager"
+  build_vlm_args
+  launch vlm "$VLLM_VENV" "$VLM_GPU" vllm "${VLM_ARGS[@]}"
 }
 
 start_tts() {
-  # shellcheck disable=SC2046
-  launch tts "$OMNI_VENV" "$TTS_GPU" \
-    vllm serve "$TTS_MODEL" --omni --served-model-name "$TTS_NAME" \
-      --host "$MODEL_HOST" --port "$TTS_PORT" \
-      --trust-remote-code $(tts_eager_arg) \
-      ${TTS_EXTRA_ARGS:-}
+  build_tts_args
+  launch tts "$OMNI_VENV" "$TTS_GPU" vllm "${TTS_ARGS[@]}"
 }
 
 start_asr() {
@@ -103,12 +90,8 @@ start_asr() {
       c_red "GPU $ASR_GPU 剩余显存不足以启动 ASR，请降低 TTS 占用或改用 Qwen3-ASR-0.6B"; return 1
     fi
   fi
-  launch asr "$VLLM_VENV" "$ASR_GPU" \
-    vllm serve "$ASR_MODEL" --served-model-name "$ASR_NAME" \
-      --host "$MODEL_HOST" --port "$ASR_PORT" \
-      --gpu-memory-utilization "$util" \
-      --max-model-len 4096 \
-      ${ASR_EXTRA_ARGS:-}
+  build_asr_args "$util"
+  launch asr "$VLLM_VENV" "$ASR_GPU" vllm "${ASR_ARGS[@]}"
 }
 
 stop_one() {

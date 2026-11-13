@@ -15,6 +15,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${MODELS_ENV:-$ROOT/scripts/models.env}"
 # shellcheck disable=SC1090
 source "$ENV_FILE"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib_models.sh"      # 启动参数（与 models.sh 共用）
 
 APP_PORT=9000
 RUN_USER="${SUDO_USER:-$(id -un)}"
@@ -28,19 +30,19 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-MODEL_HOST="${MODEL_HOST:-127.0.0.1}"
 HF="${HF_HOME:-$HOME/.cache/huggingface}"
-TTS_EAGER=""; [ "${TTS_ENFORCE_EAGER:-1}" = "1" ] && TTS_EAGER=" --enforce-eager"
+build_vlm_args; build_tts_args; build_asr_args
 WAIT='until curl -sf http://127.0.0.1:%s/v1/models >/dev/null; do sleep 5; done'
 
 common() {   # common <venv> <gpu>
   cat <<EOF
 User=$RUN_USER
 WorkingDirectory=$ROOT
+Environment=CUDA_DEVICE_ORDER=PCI_BUS_ID
 Environment=CUDA_VISIBLE_DEVICES=$2
 Environment=VLLM_USE_FLASHINFER_SAMPLER=0
 Environment=HF_HOME=$HF
-Environment=PATH=$1/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=$1/bin:/usr/local/bin:/usr/bin:/bin$(for kv in ${EXTRA_ENV:-}; do printf '\nEnvironment=%s' "$kv"; done)
 Restart=always
 RestartSec=10
 TimeoutStartSec=1800
@@ -57,7 +59,7 @@ After=network-online.target
 
 [Service]
 $(common "$VLLM_VENV" "$VLM_GPU")
-ExecStart=$VLLM_VENV/bin/vllm serve $VLM_MODEL --served-model-name $VLM_NAME --host $MODEL_HOST --port $VLM_PORT --max-model-len $VLM_MAX_LEN --limit-mm-per-prompt '{"image": $VLM_MAX_IMAGES, "video": 0}' --gpu-memory-utilization $VLM_GPU_UTIL --enable-auto-tool-choice --tool-call-parser hermes ${VLM_EXTRA_ARGS:-}
+ExecStart=$VLLM_VENV/bin/vllm $(render_args "${VLM_ARGS[@]}")
 
 [Install]
 WantedBy=multi-user.target
@@ -72,7 +74,7 @@ After=network-online.target
 
 [Service]
 $(common "$OMNI_VENV" "$TTS_GPU")
-ExecStart=$OMNI_VENV/bin/vllm serve $TTS_MODEL --omni --served-model-name $TTS_NAME --host $MODEL_HOST --port $TTS_PORT --trust-remote-code$TTS_EAGER ${TTS_EXTRA_ARGS:-}
+ExecStart=$OMNI_VENV/bin/vllm $(render_args "${TTS_ARGS[@]}")
 
 [Install]
 WantedBy=multi-user.target
@@ -80,6 +82,11 @@ EOF
 }
 
 unit_asr() {
+  # 与 TTS 共用一张卡时，等 TTS 先占好显存再启动，避免两者同时申请显存失败
+  local wait_tts=""
+  if [ "$ASR_GPU" = "$TTS_GPU" ]; then
+    wait_tts="ExecStartPre=/bin/bash -c '$(printf "$WAIT" "$TTS_PORT")'"
+  fi
   cat <<EOF
 [Unit]
 Description=VVA ASR $ASR_NAME (GPU$ASR_GPU:$ASR_PORT)
@@ -88,8 +95,8 @@ Wants=vva-tts.service
 
 [Service]
 $(common "$VLLM_VENV" "$ASR_GPU")
-ExecStartPre=/bin/bash -c '$(printf "$WAIT" "$TTS_PORT")'
-ExecStart=$VLLM_VENV/bin/vllm serve $ASR_MODEL --served-model-name $ASR_NAME --host $MODEL_HOST --port $ASR_PORT --gpu-memory-utilization $ASR_GPU_UTIL --max-model-len 4096 ${ASR_EXTRA_ARGS:-}
+$wait_tts
+ExecStart=$VLLM_VENV/bin/vllm $(render_args "${ASR_ARGS[@]}")
 
 [Install]
 WantedBy=multi-user.target

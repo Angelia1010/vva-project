@@ -376,3 +376,101 @@ CUDA_VISIBLE_DEVICES=1 vllm serve models/Qwen3-Embedding-0.6B --served-model-nam
 ```
 
 重启 `vva-app` 后，已上传的文档会在后台自动补算向量，知识库页面顶部会显示“关键词 + 向量检索”。
+
+## 12. 升级到 4 张 3090 + Qwen3.6-35B-A3B
+
+| 卡 | 服务 | 模型 |
+|---|---|---|
+| GPU 0 + 1（两卡合跑） | vva-vlm（8001） | Qwen3.6-35B-A3B-FP8：智能体大脑 + 看图 |
+| GPU 2 | vva-asr（8002） | Qwen3-ASR-1.7B |
+| GPU 3 | vva-tts（8003） | Qwen3-TTS-1.7B（独占一张卡，去掉 --enforce-eager） |
+
+配置文件：`scripts/models.4x3090.env`（显卡、端口、启动参数）、`config.4x3090.yaml`（智能体配置，已关闭思考模式）。
+原方案留在 `scripts/models.2x3090.env`，旧的 `config.yaml` 在 12.3 步会备份成 `config.yaml.bak`，随时可以切回（见 12.7）。
+
+### 12.1 检查
+
+```bash
+nvidia-smi                                   # 四张卡都没有其他程序占用
+df -h /data7                                 # 至少留 40G 给新模型
+/data7/Vision-Voice-Agent/venvs/vllm/bin/python -c "import vllm; print(vllm.__version__)"   # 版本过旧会不认识 Qwen3.6，需先升级 vllm
+```
+
+### 12.2 更新代码、下载模型
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+git fetch && git checkout feat/4x3090-qwen36
+source .venv/bin/activate && python -m pytest -q tests && deactivate
+
+cd /data7/Vision-Voice-Agent
+source venvs/vllm/bin/activate
+uv pip install modelscope
+export MODELSCOPE_CACHE=/data7/Vision-Voice-Agent/.cache/modelscope
+modelscope download --model Qwen/Qwen3.6-35B-A3B-FP8 --local_dir models/Qwen3.6-35B-A3B-FP8
+deactivate
+ls models/Qwen3.6-35B-A3B-FP8                # 有 config.json 和若干 .safetensors 即可
+```
+
+### 12.3 备份并换上新配置
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+cp scripts/models.env scripts/models.env.bak
+cp config.yaml config.yaml.bak
+cp scripts/models.4x3090.env scripts/models.env
+cp config.4x3090.yaml config.yaml
+diff config.yaml.bak config.yaml            # 看看原来有没有自己改过的地方（如 scene_hint），有就改回来
+```
+
+### 12.4 先手动启动、逐个检查
+
+```bash
+sudo systemctl stop vva-app vva-vlm vva-asr vva-tts
+nvidia-smi                                   # 确认四张卡显存都已释放
+
+scripts/models.sh start vlm                  # 两卡加载约 3~10 分钟，看到“vlm 已就绪”为止
+source .venv/bin/activate
+python scripts/check_models.py -c config.yaml --only vlm
+
+scripts/models.sh start tts
+scripts/models.sh start asr
+python scripts/check_models.py -c config.yaml          # 全部检查，注意 TTS 的“首包”时间
+deactivate
+```
+
+### 12.5 写入开机自启
+
+```bash
+scripts/models.sh stop
+sudo scripts/install_systemd.sh --port 9000
+sudo systemctl restart vva-vlm vva-tts vva-asr vva-app
+systemctl status vva-vlm vva-tts vva-asr vva-app --no-pager | grep -E "●|Active"
+```
+
+然后在浏览器打开测试页，先点“清空对话”，按 `examples/demo-office/测试清单.md` 测一遍。
+
+### 12.6 常见问题
+
+| 现象 | 处理 |
+|---|---|
+| vlm 卡在启动阶段，日志停在 NCCL 相关信息不动 | `models.env` 里取消 `EXTRA_ENV="NCCL_P2P_DISABLE=1"` 的注释，重新启动 |
+| vlm 报显存不足 | `VLM_MAX_LEN` 改为 16384，或 `VLM_GPU_UTIL` 改为 0.92 |
+| 报不认识 `--mm-encoder-tp-mode` | 从 `VLM_EXTRA_ARGS` 里删掉它 |
+| 报 FP8 不支持，或显存仍然不够 | 改用 4 位量化版：下载 Qwen3.6-35B-A3B 的 AWQ 4bit 版本，`VLM_MODEL` 指向它，其余不变 |
+| 回答很慢、回答里出现思考过程 | 确认 `config.yaml` 里 `vlm` 和 `agent_llm` 都有 `enable_thinking: false` |
+| 自检“函数调用”失败 | 确认 `VLM_TOOL_PARSER=qwen3_coder`、`VLM_REASONING_PARSER=qwen3` |
+| 自检“定位坐标”提示不匹配 | 按提示修改 `config.yaml` 的 `bbox_format` |
+| tts 启动失败 | `TTS_ENFORCE_EAGER=1`，重新 `sudo scripts/install_systemd.sh --port 9000` 并重启 vva-tts |
+| 想试多 token 预测加速 | 取消 `VLM_SPECULATIVE` 那行注释；两张 3090 之间没有 NVLink 时可能变慢，用自检耗时对比 |
+
+### 12.7 切回原方案
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+sudo systemctl stop vva-app vva-vlm vva-asr vva-tts
+cp scripts/models.2x3090.env scripts/models.env
+cp config.yaml.bak config.yaml
+sudo scripts/install_systemd.sh --port 9000
+sudo systemctl restart vva-vlm vva-tts vva-asr vva-app
+```

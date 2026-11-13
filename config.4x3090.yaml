@@ -1,0 +1,87 @@
+# 4 × RTX 3090（24G）部署配置
+#   GPU0+1: Qwen3.6-35B-A3B-FP8  智能体大脑 + 看图（两卡合跑）  端口 8001
+#   GPU2:   Qwen3-ASR-1.7B       语音识别                        端口 8002
+#   GPU3:   Qwen3-TTS-1.7B       语音合成                        端口 8003
+# 模型服务的显卡、端口见 scripts/models.4x3090.env。
+# 用法：cp config.4x3090.yaml config.yaml && scripts/run_app.sh
+
+video:
+  type: push            # 浏览器测试模式（--browser 会自动设置）；接 RTSP 摄像头改为 stream
+  stream:
+    url: "rtsp://admin:password@192.168.1.64:554/Streaming/Channels/101"
+  buffer:
+    seconds: 60
+    fps: 2
+
+audio:
+  enabled: true
+  input: {type: push, sample_rate: 16000}
+  output: {type: push}
+
+voice:
+  mode: always                    # always 一直在听 | wake_word 要说唤醒词 | push_to_talk 按住说话
+  mute_mic_while_speaking: true   # 浏览器外放时防止听到自己；戴耳机可改 false 以支持说话打断
+  wake_words: []                  # mode=wake_word 时使用，例如 ["小监"]
+
+models:
+  vlm:
+    base_url: "http://127.0.0.1:8001/v1"
+    api_key: "EMPTY"
+    model: "qwen3.6-35b"          # 与 scripts/models.env 中 VLM_NAME 一致
+    bbox_format: "0-1000"         # Qwen3.x 使用 0~1000 相对坐标；以 check_models.py 的“定位坐标”结果为准
+    json_mode: true
+    max_tokens: 1024
+    temperature: 0.1
+    extra_body:                   # 关闭思考模式：实时对话必须关，否则每次回答前都要先“想”好几秒
+      chat_template_kwargs: {enable_thinking: false}
+
+  agent_llm:                      # 地址和模型留空：复用上面的 Qwen3.6（同一个服务）
+    temperature: 0.3
+    stream: true
+    max_tokens: 400
+    extra_body:
+      chat_template_kwargs: {enable_thinking: false}
+
+  asr:
+    base_url: "http://127.0.0.1:8002/v1"
+    api_key: "EMPTY"
+    model: "qwen3-asr"
+    language: zh
+
+  tts:
+    base_url: "http://127.0.0.1:8003/v1"
+    api_key: "EMPTY"
+    model: "qwen3-tts"
+    voice: "vivian"               # 可用音色：python scripts/check_models.py --voices
+    language: "Chinese"
+    response_format: pcm
+    sample_rate: 24000
+    stream: true
+    stream_format: audio          # 必须为 audio，否则 vLLM-Omni 返回 SSE 事件而非音频
+
+agent:
+  scene_hint: ""
+  look_max_side: 1280             # 大模型看得更细，读表、认小字更准
+  crop_min_side: 768
+  max_tool_rounds: 6
+  max_history_turns: 12           # 上下文更长，多记几轮
+  max_answer_chars: 60
+
+observer:
+  enabled: true
+  interval: 5
+  image_side: 1024
+  change_threshold: 6
+  max_idle: 30
+
+memory:
+  enabled: true
+  retention_days: 30
+  keyframe_retention_days: 7
+  summary_minutes: 10
+
+web:
+  host: 0.0.0.0
+  port: 8000
+  ssl_certfile: ""
+  ssl_keyfile: ""
