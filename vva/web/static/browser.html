@@ -257,9 +257,18 @@ const WORKLET = `class Cap extends AudioWorkletProcessor {
 function ensurePlayer() {
   if (!playCtx) playCtx = new AudioContext();
   if (playCtx.state === "suspended") playCtx.resume();
+  return playCtx.state === "running";
+}
+// 浏览器要求用户先操作过页面才允许播放声音：首次点击/按键时激活
+let soundTip = "";
+function unlockSound() {
+  ensurePlayer();
+  if (soundTip) { soundTip = ""; showTips(); }
+  document.removeEventListener("pointerdown", unlockSound);
+  document.removeEventListener("keydown", unlockSound);
 }
 function playPcm(arrayBuf) {
-  ensurePlayer();
+  if (!ensurePlayer() && !soundTip) { soundTip = "收到语音回答但浏览器未允许播放：点击页面任意位置即可启用语音播报"; showTips(); }
   const pcm = new Int16Array(arrayBuf);
   if (!pcm.length) return;
   const buf = playCtx.createBuffer(1, pcm.length, outRate);
@@ -291,12 +300,17 @@ function resampleTo(input, srcRate, dstRate) {
   return out;
 }
 
+// 语音通道：页面加载后就建立并保持连接（只打字提问也能收到语音回答），断开后自动重连
+let audioReady = null, audioRetry = null;
 function connectAudio() {
-  return new Promise((resolve, reject) => {
+  if (audioReady && audioWs && audioWs.readyState <= 1) return audioReady;
+  clearTimeout(audioRetry);
+  audioReady = new Promise((resolve, reject) => {
     const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/ingest/audio" + (TOKEN ? "?token=" + TOKEN : "");
-    audioWs = new WebSocket(url); audioWs.binaryType = "arraybuffer";
+    const sock = new WebSocket(url); sock.binaryType = "arraybuffer";
+    audioWs = sock;
     let ready = false;
-    audioWs.onmessage = (m) => {
+    sock.onmessage = (m) => {
       if (typeof m.data === "string") {
         const msg = JSON.parse(m.data);
         if (msg.type === "config") {
@@ -305,13 +319,20 @@ function connectAudio() {
         } else if (msg.type === "clear") stopPlayback();
       } else playPcm(m.data);
     };
-    audioWs.onerror = () => { if (!ready) reject(new Error("语音通道连接失败")); };
-    audioWs.onclose = () => { if (micStream) { pill("pill-mic", "语音通道断开", "hot"); stopMic(); } };
+    sock.onerror = () => { if (!ready) reject(new Error("语音通道连接失败")); };
+    sock.onclose = () => {
+      if (!ready) reject(new Error("语音通道连接失败"));
+      if (audioWs !== sock) return;
+      audioWs = null; audioReady = null;
+      if (micStream) { pill("pill-mic", "语音通道断开", "hot"); stopMic(); }
+      audioRetry = setTimeout(() => connectAudio().catch(() => {}), 2000);
+    };
   });
+  return audioReady;
 }
 async function startMic() {
   ensurePlayer();
-  await connectAudio();
+  await connectAudio();   // 通常页面加载时已连好，这里只在断线时补连
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
   micCtx = new AudioContext();
@@ -342,7 +363,7 @@ function stopMic() {
   micNode = micCtx = micStream = null;
   $("meter").style.width = "0";
   $("btn-mic").textContent = "开启麦克风"; $("btn-mic").className = "primary";
-  if (audioWs && audioWs.readyState <= 1) { const w = audioWs; audioWs = null; w.close(); }
+  // 不关闭语音通道：关掉麦克风后打字提问仍能听到回答
   pill("pill-mic", "麦克风关闭");
 }
 $("btn-mic").onclick = async () => {
@@ -352,6 +373,8 @@ $("btn-mic").onclick = async () => {
 };
 
 // ============================================================ 启动检查
+let baseTips = [];
+function showTips() { notice(baseTips.concat(soundTip ? [soundTip] : []).join("；")); }
 (async () => {
   const tips = [];
   if (!navigator.mediaDevices) {
@@ -376,8 +399,14 @@ $("btn-mic").onclick = async () => {
       tips.push(caps.voice ? "语音由服务器本机麦克风采集，网页麦克风不可用"
                            : "语音未开启（--no-audio 或语音模块启动失败），可以打字提问");
     }
+    if (caps.audio_out_push) {
+      connectAudio().catch(() => {});
+      soundTip = "点击页面任意位置即可启用语音播报";
+      document.addEventListener("pointerdown", unlockSound);
+      document.addEventListener("keydown", unlockSound);
+    }
   } catch (e) { tips.push("无法连接服务端"); }
-  notice(tips.join("；"));
+  baseTips = tips; showTips();
   try { await listCameras(); } catch (e) {}
   connectChat();
 })();

@@ -76,11 +76,18 @@ start_vlm() {
       ${VLM_EXTRA_ARGS:-}
 }
 
+tts_eager_arg() {
+  # --enforce-eager 关闭 CUDA graph：启动更稳，但合成首包明显变慢（实测约 17 秒）。
+  # 在 models.env 里设 TTS_ENFORCE_EAGER=0 可去掉它来提速；去掉后起不来再改回 1。
+  [ "${TTS_ENFORCE_EAGER:-1}" = "1" ] && echo "--enforce-eager"
+}
+
 start_tts() {
+  # shellcheck disable=SC2046
   launch tts "$OMNI_VENV" "$TTS_GPU" \
     vllm serve "$TTS_MODEL" --omni --served-model-name "$TTS_NAME" \
       --host "$MODEL_HOST" --port "$TTS_PORT" \
-      --trust-remote-code --enforce-eager \
+      --trust-remote-code $(tts_eager_arg) \
       ${TTS_EXTRA_ARGS:-}
 }
 
