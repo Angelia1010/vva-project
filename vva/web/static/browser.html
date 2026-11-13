@@ -19,10 +19,12 @@
   .stat b { font: 600 22px/1 var(--digits); font-variant-numeric: tabular-nums; }
   .stat b.hot { color: var(--alert-soft); }
 
-  main.desk { display: flex; flex-wrap: wrap; gap: 16px; padding: 14px 24px 24px; align-items: stretch; }
-  .col-duties { flex: 1 1 300px; max-width: 350px; display: flex; flex-direction: column; gap: 10px; }
-  .col-view { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-  .col-cmd { flex: 1 1 340px; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
+  /* 三栏固定：左 职责 · 中 画面 · 右 告警与指令。中栏自适应，窗口再窄也不换行，直到平板宽度才改成上下排列 */
+  main.desk { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) minmax(300px, 380px);
+              gap: 16px; padding: 14px 24px 24px; align-items: start; }
+  .col-duties { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .col-view { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .col-cmd { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
   .col-duties .head { display: flex; align-items: center; gap: 8px; }
   .col-duties .head h2 { margin: 0; font-size: 16px; }
   .col-duties .head .n { font: 15px var(--digits); color: var(--ink-2); }
@@ -92,7 +94,11 @@
   form#form input { font-size: 14px; height: 44px; }
   form#form button { flex: 0 0 auto; min-width: 64px; }
   #btn-ptt.primary { min-width: 104px; }
-  @media (max-width: 960px) { .col-duties, .col-cmd { max-width: none; } }
+  @media (max-width: 1100px) {      /* 窄屏：画面在上占满一行，职责和指令并排在下 */
+    main.desk { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .col-view { grid-column: 1 / -1; grid-row: 1; }
+  }
+  @media (max-width: 720px) { main.desk { grid-template-columns: minmax(0, 1fr); padding: 12px; } }
 </style>
 </head>
 <body>
