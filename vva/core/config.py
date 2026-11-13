@@ -118,6 +118,7 @@ DEFAULTS: dict[str, Any] = {
         "max_events": 40,            # search_memory 一次最多返回多少条记录
         "max_notes": 50,
     },
+    "channels_settings_dir": "data/channels",   # 网页上保存的入口配置（覆盖 channels 中的同名项）
     "channels": {                    # 接入入口，见 vva/channels
         "feishu": {
             "enabled": False,

@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>飞书 - 监控值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 20px; align-items: start; }
+
+  /* 连接状态条 */
+  .state { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px;
+           background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid #9aa7b3; border-radius: 6px; }
+  .state.ok { border-left-color: var(--lamp-ok); } .state.err { border-left-color: var(--lamp-alert); } .state.warn { border-left-color: var(--lamp-busy); }
+  .state .lamp { width: 12px; height: 12px; border-radius: 50%; background: #9aa7b3; flex: 0 0 auto; }
+  .state.ok .lamp { background: var(--lamp-ok); box-shadow: 0 0 6px var(--lamp-ok); }
+  .state.err .lamp { background: var(--lamp-alert); } .state.warn .lamp { background: var(--lamp-busy); }
+  .state .text { flex: 1; min-width: 220px; }
+  .state .text strong { display: block; font-size: 15px; }
+  .state .text span { color: var(--ink-2); font-size: 13px; }
+  .notes { margin: -6px 0 16px; display: grid; gap: 6px; }
+  .note { padding: 8px 12px; font-size: 13px; background: #fff8e8; border-left: 3px solid var(--lamp-busy); color: #6e4c00; }
+  .note.restart { background: #fdf0ee; border-left-color: var(--lamp-alert); color: #8a2a20; display: flex; align-items: center; gap: 12px; }
+  .note code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
+
+  /* 表单分组：同一个面板里用分隔线分段 */
+  .form { padding: 0; }
+  .group { padding: 16px 18px; border-bottom: 1px solid var(--rule); }
+  .group h2 { margin: 0 0 2px; font-size: 15px; }
+  .group > p { margin: 0 0 4px; color: var(--ink-2); font-size: 13px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  textarea.ids { min-height: 64px; font-family: var(--digits); font-size: 13px; }
+  .switches { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 12px; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
+  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #b7c1ca; position: relative; cursor: pointer; margin: 0; }
+  .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch input:checked { background: var(--lamp-ok); }
+  .switch input:checked::after { left: 18px; }
+  .switch input:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+  .switch.big { font-size: 15px; font-weight: 600; }
+  .inline { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .result { font-size: 13px; } .result.ok { color: var(--lamp-ok); } .result.err { color: var(--lamp-alert); }
+  .savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+             background: var(--panel); border-top: 1px solid var(--rule); border-radius: 0 0 6px 6px; box-shadow: 0 -6px 12px -10px rgba(23,33,43,.35); }
+  .savebar .dirty { color: #8a5a00; font-size: 13px; display: none; }
+  .savebar .dirty.on { display: inline; }
+
+  /* 右侧：最近的消息 */
+  .side { display: grid; gap: 16px; position: sticky; top: 16px; }
+  .chat { padding: 10px 0; border-bottom: 1px solid #e3e8ec; font-size: 13px; }
+  .chat:last-child { border-bottom: 0; }
+  .chat .head { display: flex; gap: 8px; align-items: baseline; }
+  .chat .kind { font-size: 11px; padding: 0 6px; border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-2); }
+  .chat .id { font-family: var(--digits); word-break: break-all; }
+  .chat .when { margin-left: auto; color: var(--ink-2); font-family: var(--digits); white-space: nowrap; }
+  .chat .said { color: var(--ink-2); margin: 2px 0 6px; }
+  .chat .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chat .acts button { padding: 3px 9px; font-size: 12px; }
+  .empty { color: var(--ink-2); font-size: 13px; line-height: 1.8; }
+  details.steps summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details.steps ol { padding-left: 20px; margin: 10px 0 0; font-size: 13px; line-height: 1.9; }
+  details.steps code { background: #eef1f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .side { position: static; } .row2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="duty">
+  <span class="brand">监控值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">监控</a>
+    <a href="/skills">技能</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/feishu" aria-current="page">飞书</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>飞书</h1>
+      <p>接入后可以在飞书里私聊机器人或在群里 @它 提问、下指令，告警和定时报告会推送到指定的群。使用长连接接收消息，服务器不需要公网 IP。</p>
+    </div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="state" id="state" role="status">
+    <span class="lamp" aria-hidden="true"></span>
+    <div class="text"><strong id="state-title">正在读取…</strong><span id="state-detail"></span></div>
+  </div>
+  <div class="notes" id="notes"></div>
+
+  <div class="layout">
+    <section class="panel form" aria-label="飞书配置">
+      <div class="group">
+        <label class="switch big"><input type="checkbox" id="enabled">开启飞书接入</label>
+      </div>
+
+      <div class="group">
+        <h2>应用凭证</h2>
+        <p>在飞书开放平台“凭证与基础信息”页面复制。步骤见右侧“配置步骤”。</p>
+        <div class="row2">
+          <div><label class="field" for="app_id">App ID</label><input id="app_id" type="text" placeholder="cli_xxxxxxxxxxxxxxxx" autocomplete="off"></div>
+          <div><label class="field" for="app_secret">App Secret</label><input id="app_secret" type="password" autocomplete="new-password"></div>
+        </div>
+        <label class="field" for="domain">版本</label>
+        <select id="domain">
+          <option value="https://open.feishu.cn">飞书（国内版）</option>
+          <option value="https://open.larksuite.com">Lark（国际版）</option>
+        </select>
+        <div class="inline"><button type="button" id="btn-check">测试连接</button><span class="result" id="check-result"></span></div>
+      </div>
+
+      <div class="group">
+        <h2>推送</h2>
+        <p>群的 chat_id 可以在右侧“最近的消息”里一键加入，或在群里 @机器人 发送 <code>/id</code> 获取。每行一个。</p>
+        <div class="row2">
+          <div><label class="field" for="alert_chats">告警推送到</label><textarea id="alert_chats" class="ids" placeholder="oc_xxxxxxxx"></textarea></div>
+          <div><label class="field" for="report_chats">定时报告发到</label><textarea id="report_chats" class="ids" placeholder="oc_xxxxxxxx"></textarea></div>
+        </div>
+        <div class="row2">
+          <div><label class="field" for="report_times">报告时间<span class="muted">逗号分隔</span></label><input id="report_times" type="text" placeholder="08:00, 18:00"></div>
+          <div><label class="field" for="web_url">“查看现场”链接</label><input id="web_url" type="text" placeholder="https://服务器IP:9000/browser"></div>
+        </div>
+        <div class="switches"><label class="switch"><input type="checkbox" id="send_images">回答和告警附带画面截图</label></div>
+      </div>
+
+      <div class="group">
+        <h2>权限</h2>
+        <p>“允许使用”两项都空着时，所有能找到机器人的人都能用。管理员空着时，能用的人都可以修改提醒规则和备忘。</p>
+        <div class="row2">
+          <div><label class="field" for="allowed_chats">允许使用的群</label><textarea id="allowed_chats" class="ids" placeholder="oc_xxxxxxxx"></textarea></div>
+          <div><label class="field" for="allowed_users">允许使用的人<span class="muted">open_id</span></label><textarea id="allowed_users" class="ids" placeholder="ou_xxxxxxxx"></textarea></div>
+        </div>
+        <label class="field" for="admin_users">管理员<span class="muted">open_id，可以修改提醒规则和备忘</span></label>
+        <textarea id="admin_users" class="ids" placeholder="ou_xxxxxxxx"></textarea>
+        <div class="switches"><label class="switch"><input type="checkbox" id="require_mention">群里需要 @机器人 才回复</label></div>
+      </div>
+
+      <div class="savebar">
+        <button class="primary" type="button" id="btn-save">保存并生效</button>
+        <span class="dirty" id="dirty">有未保存的修改</span>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel" aria-labelledby="t-recent">
+        <h2 id="t-recent">最近的消息</h2>
+        <div id="recent"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="t-test">
+        <h2 id="t-test">发送测试消息</h2>
+        <label class="field" for="test_chat" style="margin-top:0">群的 chat_id</label>
+        <input id="test_chat" type="text" placeholder="oc_xxxxxxxx">
+        <div class="inline"><button type="button" id="btn-test">发送</button><span class="result" id="test-result"></span></div>
+      </section>
+
+      <section class="panel">
+        <details class="steps" id="steps">
+          <summary>配置步骤</summary>
+          <ol>
+            <li>打开 <a href="https://open.feishu.cn/app" target="_blank" rel="noopener">飞书开放平台</a>，创建企业自建应用，复制 App ID 和 App Secret 填到左边。</li>
+            <li>“添加应用能力”里添加<b>机器人</b>。</li>
+            <li>“权限管理”开通：<code>im:message</code>、<code>im:message.group_at_msg:readonly</code>、<code>im:message.p2p_msg:readonly</code>、<code>im:message:send_as_bot</code>、<code>im:resource</code>。</li>
+            <li>回到这里打开“开启飞书接入”，点“保存并生效”。</li>
+            <li>“事件与回调”里订阅方式选<b>使用长连接接收事件</b>，添加事件“接收消息 im.message.receive_v1”。服务要先开启，否则保存不了。</li>
+            <li>“版本管理与发布”创建版本并发布。</li>
+            <li>把机器人拉进群，在群里 @它 说句话，群会出现在“最近的消息”里，一键设为告警群。</li>
+          </ol>
+        </details>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script src="/static/console.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const LISTS = ["alert_chats", "report_chats", "allowed_chats", "allowed_users", "admin_users"];
+const BOOLS = ["enabled", "send_images", "require_mention"];
+let dirty = false, msgTimer = null;
+
+function msg(text, cls) {
+  const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || "");
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000);
+}
+function setDirty(v) { dirty = v; $("dirty").classList.toggle("on", v); }
+function lines(id) { return $(id).value.split(/[\s,，、]+/).map(x => x.trim()).filter(Boolean); }
+
+async function call(method, url, body) {
+  const headers = { "X-Token": adminToken() };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!res.ok) {
+    let d = String(res.status); try { d = (await res.json()).detail || d; } catch (e) {}
+    if (res.status === 401) { $("token").style.display = "block"; $("token").focus(); }
+    throw new Error(d);
+  }
+  return res.json();
+}
+
+function renderState(data) {
+  const s = data.settings, st = data.status, el = $("state");
+  let cls = "", title = "", detail = "";
+  if (!s.enabled) { title = "未开启"; detail = "填写应用凭证后打开“开启飞书接入”并保存。"; }
+  else if (!st.started) { cls = "warn"; title = "已开启，等待启动"; detail = "重启服务后生效。"; }
+  else if (st.receiver === "error") { cls = "err"; title = "消息接收出错"; detail = st.error || "请查看服务日志。仍可推送告警。"; }
+  else {
+    cls = "ok"; title = "运行中";
+    const parts = [st.last_message ? `最近收到消息 ${st.last_message}` : "还没有收到消息",
+                   st.alert_push ? "告警推送已开启" : "未设置告警群", st.report ? "定时报告已开启" : "未设置定时报告"];
+    detail = parts.join("，");
+  }
+  el.className = "state " + cls; $("state-title").textContent = title; $("state-detail").textContent = detail;
+
+  const notes = $("notes"); notes.innerHTML = "";
+  const add = (html, extraCls) => { const d = document.createElement("div"); d.className = "note " + (extraCls || ""); d.innerHTML = html; notes.appendChild(d); return d; };
+  if (data.restart_required) {
+    const d = add(`<span style="flex:1">连接参数已修改，需要重启服务才能生效。</span>`, "restart");
+    if (data.env.restart_supported) {
+      const b = document.createElement("button"); b.className = "primary"; b.textContent = "重启服务"; b.onclick = restart; d.appendChild(b);
+    } else { d.querySelector("span").textContent += "请在服务器上执行 sudo systemctl restart vva-app。"; }
+  }
+  if (!data.env.lark_oapi) add("服务器还没有安装接收飞书消息的组件，收不到消息（推送不受影响）。在服务器上执行：<code>source .venv/bin/activate && uv pip install \"lark-oapi>=1.4,<2\"</code>，然后重启服务。");
+  if (!data.env.ffmpeg) add("服务器没有安装 ffmpeg，飞书里的语音消息无法识别（文字不受影响）。安装：<code>sudo apt install -y ffmpeg</code>");
+}
+
+function renderRecent(st) {
+  const box = $("recent"); box.innerHTML = "";
+  if (!st.recent || !st.recent.length) {
+    box.innerHTML = '<p class="empty">还没有收到消息。把机器人拉进群并 @它 说句话，或私聊它，这里会列出会话，可以一键设为告警群、报告群。</p>';
+    return;
+  }
+  for (const c of st.recent) {
+    const el = document.createElement("div"); el.className = "chat";
+    el.innerHTML = `<div class="head"><span class="kind">${c.chat_type === "group" ? "群聊" : "私聊"}</span><span class="id"></span><span class="when">${c.time}</span></div>
+      <div class="said"></div><div class="acts"></div>`;
+    el.querySelector(".id").textContent = c.chat_id;
+    el.querySelector(".said").textContent = "“" + c.text + "”";
+    const acts = el.querySelector(".acts");
+    const btn = (label, field, value) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+      b.onclick = () => {
+        const cur = lines(field);
+        if (!cur.includes(value)) { $(field).value = [...cur, value].join("\n"); setDirty(true); msg(`已加入“${$(field).labels[0].firstChild.textContent.trim()}”，记得保存`, "ok"); }
+        else msg("已经在列表里了", "ok");
+      };
+      acts.appendChild(b);
+    };
+    if (c.chat_type === "group") { btn("设为告警群", "alert_chats", c.chat_id); btn("设为报告群", "report_chats", c.chat_id); btn("允许此群使用", "allowed_chats", c.chat_id); }
+    btn("发消息的人设为管理员", "admin_users", c.sender_id);
+    const t = document.createElement("button"); t.type = "button"; t.textContent = "发测试消息";
+    t.onclick = () => { $("test_chat").value = c.chat_id; sendTest(); };
+    acts.appendChild(t);
+    box.appendChild(el);
+  }
+}
+
+function render(data, keepForm) {
+  const s = data.settings;
+  if (!keepForm) {
+    for (const k of BOOLS) $(k).checked = !!s[k];
+    $("app_id").value = s.app_id || ""; $("app_secret").value = "";
+    $("app_secret").placeholder = s.app_secret_set ? "已设置，留空表示不修改" : "在开放平台复制";
+    $("domain").value = s.domain || "https://open.feishu.cn";
+    $("web_url").value = s.web_url || (location.origin + "/browser");
+    $("report_times").value = (s.report_times || []).join(", ");
+    for (const k of LISTS) $(k).value = (s[k] || []).join("\n");
+    setDirty(false);
+  }
+  renderState(data); renderRecent(data.status);
+  if (!s.enabled && !s.app_id) $("steps").open = true;
+}
+
+async function refresh(keepForm) {
+  try { render(await call("GET", "/api/channels/feishu"), keepForm); }
+  catch (e) { $("state-title").textContent = "无法读取配置"; $("state-detail").textContent = e.message; }
+}
+
+function formBody() {
+  const body = { app_id: $("app_id").value.trim(), app_secret: $("app_secret").value.trim(), domain: $("domain").value,
+                 web_url: $("web_url").value.trim(), report_times: lines("report_times") };
+  for (const k of BOOLS) body[k] = $(k).checked;
+  for (const k of LISTS) body[k] = lines(k);
+  return body;
+}
+
+$("btn-save").onclick = async () => {
+  try { render(await call("PUT", "/api/channels/feishu", formBody())); msg("已保存", "ok"); }
+  catch (e) { msg("没有保存：" + e.message, "err"); }
+};
+$("btn-check").onclick = async () => {
+  const r = $("check-result"); r.className = "result"; r.textContent = "正在连接…";
+  try { const x = await call("POST", "/api/channels/feishu/check", { app_id: $("app_id").value.trim(), app_secret: $("app_secret").value.trim(), domain: $("domain").value });
+        r.className = "result " + (x.ok ? "ok" : "err"); r.textContent = x.message; }
+  catch (e) { r.className = "result err"; r.textContent = e.message; }
+};
+async function sendTest() {
+  const r = $("test-result"); r.className = "result"; r.textContent = "正在发送…";
+  try { const x = await call("POST", "/api/channels/feishu/send_test", { chat_id: $("test_chat").value.trim() });
+        r.className = "result " + (x.ok ? "ok" : "err"); r.textContent = x.message; }
+  catch (e) { r.className = "result err"; r.textContent = e.message; }
+}
+$("btn-test").onclick = sendTest;
+async function restart() {
+  if (!confirm("重启服务会中断正在进行的对话，大约 10 秒后恢复。继续？")) return;
+  try { const x = await call("POST", "/api/system/restart"); msg(x.message, "ok"); setTimeout(() => location.reload(), 10000); }
+  catch (e) { msg("重启失败：" + e.message, "err"); }
+}
+document.querySelectorAll("input, textarea, select").forEach(el => {
+  if (el.id !== "test_chat" && el.id !== "token") el.addEventListener("input", () => setDirty(true));
+});
+window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+refresh(false);
+setInterval(() => refresh(true), 15000);     // 定时刷新状态和最近的消息，不覆盖正在编辑的内容
+</script>
+</body>
+</html>

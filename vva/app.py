@@ -137,8 +137,8 @@ class App:
         self._tasks: list[asyncio.Task] = []
 
         # 接入入口（飞书等），只通过 ChannelHost 接口与应用交互
-        from vva.channels import build_channels
-        self.channels = build_channels(cfg.get("channels") or {}, self)
+        from vva.channels import ChannelManager
+        self.channels = ChannelManager(cfg.get("channels") or {}, self, cfg.get("channels_settings_dir") or "data/channels")
 
     # ---------------------------------------------------------------- 生命周期
     async def start(self) -> None:
@@ -158,17 +158,11 @@ class App:
             except Exception as e:
                 log.error("语音模块启动失败，将只支持文字交互：%s", e)
                 self.voice = None
-        for ch in self.channels:
-            try:
-                await ch.start()
-            except Exception as e:
-                log.error("接入入口 %s 启动失败：%s", ch.name, e)
+        await self.channels.start()
 
     async def stop(self) -> None:
         await self.cancel_turn()
-        for ch in self.channels:
-            with contextlib.suppress(Exception):
-                await ch.stop()
+        await self.channels.stop()
         for t in self._tasks:
             t.cancel()
         if self.voice:

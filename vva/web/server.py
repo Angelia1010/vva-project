@@ -223,6 +223,10 @@ def create_web_app(app: App) -> FastAPI:
         from vva.web.skills_api import register_skill_routes
         register_skill_routes(api, app.skills, app.snapshot, web_cfg.get("admin_token") or "", STATIC_DIR)
 
+    # ------------------------------------------------------------ 飞书等接入入口的配置
+    from vva.web.channels_api import register_channel_routes
+    register_channel_routes(api, app.channels, web_cfg.get("admin_token") or "", STATIC_DIR)
+
     # ------------------------------------------------------------ 知识库管理
     if app.knowledge:
         from vva.web.knowledge_api import register_knowledge_routes

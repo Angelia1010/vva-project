@@ -37,6 +37,19 @@ class FeishuChannel(Channel):
         super().__init__(cfg, host)
         self.api = api
         self.receiver = receiver
+        self._apply_options(cfg)
+        self._conn = (cfg.get("app_id"), cfg.get("app_secret"), cfg.get("domain"))
+        self._seen: OrderedDict[str, None] = OrderedDict()      # 去重：飞书可能重复推送同一条消息
+        self.recent: OrderedDict[str, dict[str, Any]] = OrderedDict()   # 最近发来消息的会话，供配置页一键选用
+        self._alert_task: asyncio.Task | None = None
+        self._report_task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._last_report = time.time()
+        self._stopped = False
+        self.started = False
+
+    def _apply_options(self, cfg: dict[str, Any]) -> None:
+        """可以随时修改、立即生效的选项。"""
         self.allowed_chats = set(cfg.get("allowed_chats") or [])
         self.allowed_users = set(cfg.get("allowed_users") or [])
         self.admin_users = set(cfg.get("admin_users") or [])
@@ -46,10 +59,6 @@ class FeishuChannel(Channel):
         self.report_times = [str(t) for t in cfg.get("report_times") or []]
         self.web_url = cfg.get("web_url") or ""
         self.send_images = bool(cfg.get("send_images", True))
-        self._seen: OrderedDict[str, None] = OrderedDict()      # 去重：飞书可能重复推送同一条消息
-        self._tasks: list[asyncio.Task] = []
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._last_report = time.time()
 
     # ---------------------------------------------------------------- 生命周期
     async def start(self) -> None:
@@ -64,28 +73,68 @@ class FeishuChannel(Channel):
             from vva.channels.feishu.receiver import LongConnectionReceiver
             self.receiver = LongConnectionReceiver(app_id, secret, self._on_event_threadsafe,
                                                    "" if domain == "https://open.feishu.cn" else domain)
+        self.started = True
         try:
             self.receiver.start()
         except Exception as e:
+            self.start_error = str(e)
             log.error("飞书消息接收启动失败（仍可推送告警）：%s", e)
-        if self.alert_chats:     # 先订阅再启动任务，启动后立即发生的告警也不会漏
-            q = self.host.bus.subscribe(TOPIC_ALERT)
-            self._tasks.append(asyncio.create_task(self._alert_loop(q), name="feishu-alerts"))
-        if self.report_chats and self.report_times:
-            self._tasks.append(asyncio.create_task(self._report_loop(), name="feishu-reports"))
+        self._sync_tasks()
         log.info("飞书入口已启动：告警群 %d 个，报告群 %d 个，报告时间 %s", len(self.alert_chats),
                  len(self.report_chats), self.report_times or "无")
 
+    def _sync_tasks(self) -> None:
+        """按当前配置启停告警推送、定时报告两个后台任务。"""
+        if self.alert_chats and self._alert_task is None:
+            q = self.host.bus.subscribe(TOPIC_ALERT)     # 先订阅再启动任务，启动后立即发生的告警也不会漏
+            self._alert_task = asyncio.create_task(self._alert_loop(q), name="feishu-alerts")
+        elif not self.alert_chats and self._alert_task is not None:
+            self._alert_task.cancel()
+            self._alert_task = None
+        if self.report_chats and self.report_times and self._report_task is None:
+            self._report_task = asyncio.create_task(self._report_loop(), name="feishu-reports")
+        elif not (self.report_chats and self.report_times) and self._report_task is not None:
+            self._report_task.cancel()
+            self._report_task = None
+
+    def apply(self, cfg: dict[str, Any]) -> bool:
+        """网页修改配置后调用：选项立即生效；返回 True 表示连接参数变了，需要重启服务。"""
+        self.cfg = cfg
+        self._apply_options(cfg)
+        if self.started:
+            self._sync_tasks()
+        return (cfg.get("app_id"), cfg.get("app_secret"), cfg.get("domain")) != self._conn and self.started
+
     async def stop(self) -> None:
-        for t in self._tasks:
-            t.cancel()
+        self._stopped = True      # 长连接线程无法彻底关闭：之后收到的消息一律忽略
+        for t in (self._alert_task, self._report_task):
+            if t is not None:
+                t.cancel()
+        self._alert_task = self._report_task = None
         if self.api:
             await self.api.close()
+
+    # ---------------------------------------------------------------- 状态（配置页使用）
+    def status(self) -> dict[str, Any]:
+        rec = self.receiver
+        state = getattr(rec, "state", "running" if self.started else "not_started")
+        error = getattr(self, "start_error", "") or getattr(rec, "error", "")
+        if error and state != "running":
+            state = "error"
+        last = getattr(rec, "last_event", 0.0)
+        return {"started": self.started, "receiver": state, "error": error,
+                "last_message": time.strftime("%m-%d %H:%M:%S", time.localtime(last)) if last else "",
+                "alert_push": self._alert_task is not None, "report": self._report_task is not None,
+                "recent": list(reversed(self.recent.values()))}
+
+    async def send_test(self, chat_id: str) -> None:
+        await self.api.send(chat_id, "interactive", cards.report_card(
+            "监控助手测试消息", "飞书配置正常，告警和报告会发到这里。", self.web_url))
 
     # ---------------------------------------------------------------- 接收消息
     def _on_event_threadsafe(self, event: dict[str, Any]) -> None:
         """在 SDK 线程里调用：切回主事件循环处理，立即返回。"""
-        if self._loop:
+        if self._loop and not self._stopped:
             self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.handle_event(event)))
 
     def _allowed(self, m: IncomingMessage) -> bool:
@@ -112,6 +161,11 @@ class FeishuChannel(Channel):
             return
         log.info("收到飞书消息 chat_id=%s chat_type=%s open_id=%s 类型=%s：%s",
                  m.chat_id, m.chat_type, m.sender_id, m.msg_type, m.text[:50])
+        self.recent.pop(m.chat_id, None)
+        self.recent[m.chat_id] = {"chat_id": m.chat_id, "chat_type": m.chat_type, "sender_id": m.sender_id,
+                                  "text": (m.text or f"[{m.msg_type}]")[:40], "time": time.strftime("%m-%d %H:%M")}
+        while len(self.recent) > 20:
+            self.recent.popitem(last=False)
         if m.is_group and self.require_mention and not m.mentioned:
             return
         try:

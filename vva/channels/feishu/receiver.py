@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from typing import Any, Callable
 
 log = logging.getLogger(__name__)
@@ -20,6 +21,9 @@ class LongConnectionReceiver:
         self.app_id, self.app_secret, self.domain = app_id, app_secret, domain
         self.on_message = on_message
         self._thread: threading.Thread | None = None
+        self.state = "not_started"       # not_started | running | error
+        self.error = ""
+        self.last_event = 0.0
 
     def start(self) -> None:
         try:
@@ -38,6 +42,7 @@ class LongConnectionReceiver:
         ws_client.loop = loop          # SDK 在导入时取了一个全局事件循环，这里换成本线程自己的
 
         def handle(data: Any) -> None:
+            self.last_event = time.time()
             try:
                 self.on_message(json.loads(lark.JSON.marshal(data)))
             except Exception:
@@ -49,7 +54,9 @@ class LongConnectionReceiver:
             kwargs["domain"] = self.domain
         client = lark.ws.Client(self.app_id, self.app_secret, **kwargs)
         log.info("飞书长连接启动中")
+        self.state = "running"
         try:
             client.start()      # 阻塞运行，断线会自动重连
-        except Exception:
+        except Exception as e:
             log.exception("飞书长连接异常退出")
+            self.state, self.error = "error", str(e)

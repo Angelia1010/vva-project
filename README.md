@@ -42,7 +42,7 @@ vva/
                feishu/     飞书：长连接收消息、问答/指令/语音、告警卡片、定时报告、权限
   voice/       语音会话（断句→识别→过滤→播报、打断、唤醒词、按住说话）
   app.py       编排：把以上模块组装起来
-  web/         网页服务与测试页面（/browser 监控、/skills 技能管理、/knowledge 知识库管理）
+  web/         网页服务与测试页面（/browser 监控、/skills 技能、/knowledge 知识库、/feishu 飞书配置）
 skills/        技能目录（示例-设备间读表/ 为示例，默认停用；其他技能不纳入 git）
 examples/      自定义摄像头引擎、跨进程推帧/推音频示例
 tests/         用假模型跑通全流程的测试
@@ -219,7 +219,8 @@ skills/设备间读表/
 
 每个入口是 `vva/channels/` 下独立的子目录，只通过 `ChannelHost` 接口（提问、记录告警、取画面、语音识别、生成报告）
 与应用交互。自定义入口：继承 `vva.channels.base.Channel`，在配置里写 `class: "path/to/my.py:MyChannel"`。
-飞书的配置步骤见 [DEPLOY_LINUX.md](DEPLOY_LINUX.md) 第 10 节。
+飞书可以在网页 `/feishu` 上配置（凭证、推送群、报告时间、权限、测试连接、发送测试消息），
+保存后立即生效，配置存于 `data/channels/feishu.yaml`；也可以按 [DEPLOY_LINUX.md](DEPLOY_LINUX.md) 第 10 节手动配置。
 
 ### 长期记忆（`memory`）
 

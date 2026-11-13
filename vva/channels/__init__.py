@@ -1,6 +1,6 @@
 """接入入口：把智能体接到飞书等外部系统。每个入口是一个独立的子目录，彼此解耦。
 
-配置（config.yaml）：
+配置（config.yaml），网页 /feishu 等页面保存的配置会覆盖这里的同名项（存于 data/channels/）：
     channels:
       feishu:
         enabled: true
@@ -11,32 +11,15 @@
 """
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from vva.channels.base import Channel, ChannelHost
-from vva.core.plugin import load_class
+from vva.channels.manager import BUILTIN, ChannelManager, ChannelSettings
 
-log = logging.getLogger(__name__)
-
-BUILTIN = {
-    "feishu": "vva.channels.feishu:FeishuChannel",
-}
-
-__all__ = ["Channel", "ChannelHost", "build_channels"]
+__all__ = ["Channel", "ChannelHost", "ChannelManager", "ChannelSettings", "BUILTIN", "build_channels"]
 
 
-def build_channels(cfg: dict[str, Any], host: ChannelHost) -> list[Channel]:
-    channels: list[Channel] = []
-    for name, c in (cfg or {}).items():
-        if not isinstance(c, dict) or not c.get("enabled"):
-            continue
-        spec = c.get("class") or BUILTIN.get(name)
-        if not spec:
-            log.error("未知的接入入口：%s（自定义入口需配置 class）", name)
-            continue
-        try:
-            channels.append(load_class(spec)(c, host))
-        except Exception as e:
-            log.error("接入入口 %s 创建失败：%s", name, e)
-    return channels
+def build_channels(cfg: dict[str, Any], host: ChannelHost, settings_dir: str = "") -> list[Channel]:
+    """按配置创建已启用的入口（不读取网页保存的配置时，settings_dir 留空）。"""
+    mgr = ChannelManager(cfg, host, settings_dir or "/nonexistent-vva-settings")
+    return list(mgr.channels.values())
