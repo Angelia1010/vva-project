@@ -3,26 +3,13 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
+from vva.channels.chat import IncomingMessage
+
+__all__ = ["IncomingMessage", "parse_event"]
+
 _MENTION_RE = re.compile(r"@_user_\d+\s*")
-
-
-@dataclass
-class IncomingMessage:
-    message_id: str
-    chat_id: str
-    chat_type: str              # p2p 私聊 | group 群聊
-    sender_id: str              # 发送者 open_id
-    msg_type: str               # text | post | audio | image | ...
-    text: str = ""
-    file_key: str = ""          # 语音 / 图片消息的资源 key
-    mentioned: bool = False     # 群消息中是否 @ 了人（默认权限下，群里只有 @机器人 的消息才会推送过来）
-
-    @property
-    def is_group(self) -> bool:
-        return self.chat_type == "group"
 
 
 def _post_text(content: dict[str, Any]) -> str:

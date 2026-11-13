@@ -39,10 +39,12 @@ vva/
                tools.py     主智能体调用的 ask_knowledge 工具
   channels/    接入入口（与核心解耦，只依赖 base.py 的 ChannelHost 接口）
                base.py     入口接口
-               feishu/     飞书：长连接收消息、问答/指令/语音、告警卡片、定时报告、权限
+               chat.py     聊天机器人入口的公共部分：权限、指令、问答、告警推送、定时报告
+               feishu/     飞书：长连接收消息、消息卡片
+               dingtalk/   钉钉：Stream 模式收消息、Markdown 消息、自带语音识别
   voice/       语音会话（断句→识别→过滤→播报、打断、唤醒词、按住说话）
   app.py       编排：把以上模块组装起来
-  web/         网页服务与测试页面（/browser 监控、/skills 技能、/knowledge 知识库、/feishu 飞书配置）
+  web/         网页服务与测试页面（/browser 监控、/skills 技能、/knowledge 知识库、/feishu 飞书、/dingtalk 钉钉配置）
 skills/        技能目录（示例-设备间读表/ 为示例，默认停用；其他技能不纳入 git）
 examples/      自定义摄像头引擎、跨进程推帧/推音频示例
 tests/         用假模型跑通全流程的测试
@@ -176,8 +178,8 @@ video:
 
 ### 多会话
 
-网页（含语音）共用一个会话；飞书每个群、每个私聊各一个会话，上下文互不干扰。
-没有修改权限的会话（飞书 `admin_users` 以外的人）看不到也调用不了修改提醒规则、备忘的工具。
+网页（含语音）共用一个会话；飞书、钉钉每个群、每个私聊各一个会话，上下文互不干扰。
+没有修改权限的会话（飞书、钉钉 `admin_users` 以外的人）看不到也调用不了修改提醒规则、备忘的工具。
 
 ### 技能（`skills`）
 
@@ -218,9 +220,10 @@ skills/设备间读表/
 ### 接入入口（`channels`）
 
 每个入口是 `vva/channels/` 下独立的子目录，只通过 `ChannelHost` 接口（提问、记录告警、取画面、语音识别、生成报告）
-与应用交互。自定义入口：继承 `vva.channels.base.Channel`，在配置里写 `class: "path/to/my.py:MyChannel"`。
-飞书可以在网页 `/feishu` 上配置（凭证、推送群、报告时间、权限、测试连接、发送测试消息），
-保存后立即生效，配置存于 `data/channels/feishu.yaml`；也可以按 [DEPLOY_LINUX.md](DEPLOY_LINUX.md) 第 10 节手动配置。
+与应用交互。自定义入口：继承 `vva.channels.base.Channel`，在配置里写 `class: "path/to/my.py:MyChannel"`；
+聊天机器人类的入口继承 `vva.channels.chat.ChatChannel`，只需实现收发消息。
+飞书、钉钉可以在网页 `/feishu`、`/dingtalk` 上配置（凭证、推送群、报告时间、权限、测试连接、发送测试消息），
+保存后立即生效，配置存于 `data/channels/<入口>.yaml`；也可以按 [DEPLOY_LINUX.md](DEPLOY_LINUX.md) 第 10 节（飞书）、第 13 节（钉钉）手动配置。
 
 ### 长期记忆（`memory`）
 

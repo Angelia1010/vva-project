@@ -1,8 +1,15 @@
-"""接入入口：把智能体接到飞书等外部系统。每个入口是一个独立的子目录，彼此解耦。
+"""接入入口：把智能体接到飞书、钉钉等外部系统。每个入口是一个独立的子目录，彼此解耦。
 
-配置（config.yaml），网页 /feishu 等页面保存的配置会覆盖这里的同名项（存于 data/channels/）：
+  chat.py      飞书、钉钉这类聊天机器人入口的公共部分（权限、指令、告警推送、定时报告）
+  feishu/      飞书
+  dingtalk/    钉钉
+
+配置（config.yaml），网页 /feishu、/dingtalk 页面保存的配置会覆盖这里的同名项（存于 data/channels/）：
     channels:
       feishu:
+        enabled: true
+        ...
+      dingtalk:
         enabled: true
         ...
       my_im:                               # 自定义入口：继承 vva.channels.base.Channel

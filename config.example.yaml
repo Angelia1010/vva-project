@@ -144,7 +144,7 @@ knowledge:
   max_answer_chars: 150     # 子智能体结论的最大字数
 
 # ---------------------------------------------------------------- 接入入口
-# 飞书配置步骤见 DEPLOY_LINUX.md 第 10 节
+# 飞书配置步骤见 DEPLOY_LINUX.md 第 10 节；网页 /feishu、/dingtalk 上可以直接配置
 channels:
   feishu:
     enabled: false
@@ -157,6 +157,18 @@ channels:
     allowed_chats: []        # 与 allowed_users 都为空时所有人可用
     allowed_users: []
     web_url: ""              # 卡片上“查看现场”按钮的链接
+  dingtalk:                  # 钉钉配置步骤见 DEPLOY_LINUX.md 第 13 节，也可以在网页 /dingtalk 上配置
+    enabled: false
+    client_id: ""            # 原 AppKey
+    client_secret: "${DINGTALK_CLIENT_SECRET}"
+    robot_code: ""           # 留空则与 client_id 相同
+    alert_chats: []          # 群的 openConversationId（cid 开头，在群里 @机器人 发 /id 获取），也可以填员工 userId
+    report_chats: []
+    report_times: []
+    admin_users: []          # 员工 userId
+    allowed_chats: []
+    allowed_users: []
+    web_url: ""
 
 web:
   admin_token: ""       # 技能、知识库管理页的修改口令，为空则不校验
