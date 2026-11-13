@@ -86,6 +86,25 @@ def test_chat_stream_tool_calls(fake):
     assert fake["captured"]["tool_choice"] == "auto"
 
 
+def test_chat_required_falls_back_to_auto(fake):
+    seen = []
+
+    def chat(kw):
+        seen.append(kw["tool_choice"])
+        if kw["tool_choice"] == "required":
+            raise ValueError("400 bad request")
+        return _Stream([_chunk(None, [_tc(0, "a", "look_now", "{}")])])
+    fake["chat"] = chat
+    m = clients.ChatModel({"model": "x", "base_url": "u"})
+
+    async def run():
+        return [x async for x in m.stream([{"role": "user", "content": "hi"}], tools=[{"type": "function"}],
+                                          tool_choice="required")]
+    assert asyncio.run(run())[-1][0] == "tool_calls"
+    assert asyncio.run(run())[-1][0] == "tool_calls"
+    assert seen == ["required", "auto", "auto"]          # 不支持时只试一次，之后直接用 auto
+
+
 def test_vision_request(fake):
     fake["chat"] = lambda kw: NS(choices=[NS(message=NS(content="答案", tool_calls=None))])
     v = clients.VisionModel({"model": "vl", "base_url": "u", "json_mode": True})

@@ -73,6 +73,7 @@ DEFAULTS: dict[str, Any] = {
         "crop_min_side": 768,
         "max_answer_chars": 60,      # 回答长度硬上限（字），超出后在句末截断；提示词目标为它的一半
         "look_max_tokens": 256,      # 看图模型单次回答的 token 上限
+        "force_tool_first": True,    # 每个问题第一轮强制调用工具（先看画面/查记录），避免小模型不看就答或拒答
     },
     "voice": {
         "mode": "always",            # always | wake_word | push_to_talk

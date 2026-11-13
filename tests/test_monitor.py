@@ -163,6 +163,22 @@ def test_agent_prompt_role_and_notes():
     assert "不超过30个字" in system
     assert "[n1] 3 号工位是张工的" in system
     assert "星期" in system
+    assert "我手里拿的是什么" in system                                  # “我”指代画面中的人时也要看画面
+
+
+def test_agent_forces_tool_on_first_round():
+    async def run():
+        llm = FakeLLM([[("list_watches", {})], "当前没有提醒。"])
+        from vva.agent.tools import VisionTools
+        from vva.perception.timeline import Timeline
+        from vva.video.frame_buffer import FrameBuffer
+        tools = VisionTools(FrameBuffer(), FakeVLM(), Timeline(), WatchRules(), EventBus())
+        await Agent(llm, tools).run("有哪些提醒", lambda _: None)
+        assert llm.tool_choices == ["required", "auto"]
+        llm2 = FakeLLM(["好"])
+        await Agent(llm2, tools, force_tool_first=False).run("x", lambda _: None)
+        assert llm2.tool_choices == ["auto"]
+    asyncio.run(run())
 
 
 # ---------------------------------------------------------------- 长期记忆

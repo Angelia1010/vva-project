@@ -141,17 +141,20 @@ class App:
     async def _run_turn(self, text: str, speak: bool) -> None:
         splitter, think = SentenceSplitter(), ThinkFilter()
         limiter = AnswerLimiter(self.cfg["agent"].get("max_answer_chars", 0))
+        answer: list[str] = []
         self.bus.publish(TOPIC_UI, {"type": "assistant_start"})
 
         def on_text(delta: str) -> None:
             visible = limiter.feed(think.feed(delta))
             if not visible:
                 return
+            answer.append(visible)
             self.bus.publish(TOPIC_UI, {"type": "assistant_delta", "text": visible})
             if speak and self.voice:
                 for s in splitter.feed(visible):
                     self.voice.say(s)
 
+        log.info("问：%s", text)
         try:
             await self.agent.run(text, on_text)
             on_text(think.flush())
@@ -159,6 +162,7 @@ class App:
                 for s in splitter.flush():
                     self.voice.say(s)
             self.bus.publish(TOPIC_UI, {"type": "assistant_end"})
+            log.info("答：%s", "".join(answer))
         except asyncio.CancelledError:
             self.bus.publish(TOPIC_UI, {"type": "assistant_end", "interrupted": True})
             raise

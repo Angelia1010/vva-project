@@ -39,17 +39,34 @@ class ChatModel:
         self.cfg = cfg
         self.model = cfg["model"]
         self.client = _make_client(cfg)
+        self._required_ok = True     # 服务端是否支持 tool_choice="required"
 
-    async def stream(self, messages: list[dict], tools: list[dict] | None = None
-                     ) -> AsyncIterator[tuple[str, Any]]:
-        """产出 ("text", 增量文本)；若模型要调用工具，最后产出 ("tool_calls", [{id,name,arguments}])。"""
+    async def stream(self, messages: list[dict], tools: list[dict] | None = None,
+                     tool_choice: str = "auto") -> AsyncIterator[tuple[str, Any]]:
+        """产出 ("text", 增量文本)；若模型要调用工具，最后产出 ("tool_calls", [{id,name,arguments}])。
+
+        tool_choice="required" 强制模型本轮调用工具；服务端不支持时自动退回 "auto"。
+        """
+        if tool_choice == "required" and tools and self._required_ok:
+            try:
+                async for item in self._stream(messages, tools, "required"):
+                    yield item
+                return
+            except Exception as e:  # 不同服务端报错信息不一，统一退回 auto，本进程内不再尝试
+                log.warning("tool_choice=required 调用失败，之后改用 auto：%s", e)
+                self._required_ok = False
+        async for item in self._stream(messages, tools, "auto"):
+            yield item
+
+    async def _stream(self, messages: list[dict], tools: list[dict] | None,
+                      tool_choice: str) -> AsyncIterator[tuple[str, Any]]:
         kwargs: dict[str, Any] = dict(model=self.model, messages=messages,
                                       temperature=self.cfg.get("temperature", 0.3), **_extra(self.cfg))
         if self.cfg.get("max_tokens"):
             kwargs["max_tokens"] = int(self.cfg["max_tokens"])
         if tools:
             kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+            kwargs["tool_choice"] = tool_choice
         if not self.cfg.get("stream", True):
             resp = await self.client.chat.completions.create(**kwargs)
             msg = resp.choices[0].message

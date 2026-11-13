@@ -36,8 +36,11 @@ def now_text() -> str:
 class Agent:
     def __init__(self, llm: Any, tools: Any, max_history_turns: int = 8, max_tool_rounds: int = 6,
                  filler_text: str = "", scene_hint: str = "", max_answer_chars: int = 60,
-                 notes_provider: Callable[[], list[str]] | None = None, **_: Any) -> None:
-        """notes_provider：返回操作员交代过的固定信息（如长期记忆中的备忘），会写进系统提示词。"""
+                 notes_provider: Callable[[], list[str]] | None = None, force_tool_first: bool = True,
+                 **_: Any) -> None:
+        """notes_provider：返回操作员交代过的固定信息（如长期记忆中的备忘），会写进系统提示词。
+        force_tool_first：每个问题的第一轮强制调用工具（先看画面或查记录），避免小模型不看就直接回答或拒答。
+        """
         self.llm = llm
         self.tools = tools
         self.max_history_turns = int(max_history_turns)
@@ -46,6 +49,7 @@ class Agent:
         self.scene_hint = scene_hint
         self.max_answer_chars = int(max_answer_chars)
         self.notes_provider = notes_provider
+        self.force_tool_first = bool(force_tool_first)
         self.history: list[dict[str, Any]] = []
 
     def _system(self) -> dict[str, Any]:
@@ -78,9 +82,11 @@ class Agent:
         for round_idx in range(self.max_tool_rounds + 1):
             # 最后一轮不再提供工具，强制模型给出回答
             tools = self.tools.schemas() if round_idx < self.max_tool_rounds else None
+            choice = "required" if round_idx == 0 and self.force_tool_first and tools else "auto"
             parts: list[str] = []
             calls: list[dict[str, str]] = []
-            async for kind, val in self.llm.stream([self._system(), *self.history, *turn], tools=tools):
+            async for kind, val in self.llm.stream([self._system(), *self.history, *turn], tools=tools,
+                                                   tool_choice=choice):
                 if kind == "text":
                     parts.append(val)
                     await _maybe_await(on_text(val))
