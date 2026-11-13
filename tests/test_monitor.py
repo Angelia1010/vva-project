@@ -339,6 +339,7 @@ def test_app_records_to_memory(tmp_path):
             "params": {"fps": 20}}})
         cfg["observer"]["interval"] = 0.3
         cfg["memory"]["dir"] = str(tmp_path / "memory")
+        cfg["scene"]["dir"] = str(tmp_path / "scene")
         obs_json = json.dumps({"summary": "一块表盘", "people_count": 0, "objects": ["表盘"],
                                "activities": [], "anomalies": [], "triggered_rules": []}, ensure_ascii=False)
         llm = FakeLLM([[("search_memory", {"start": "00:00", "end": "23:59"})],
@@ -353,7 +354,7 @@ def test_app_records_to_memory(tmp_path):
         await asyncio.sleep(0.1)
         kinds = {e.kind for e in app.memory.store.events_between(0, time.time() + 1)}
         assert {KIND_OBSERVATION, KIND_COMMAND} <= kinds
-        tool_result = json.loads(next(m for m in app.agent.history if m["role"] == "tool")["content"])
+        tool_result = json.loads(next(m for m in app.conversations.get("web").messages if m["role"] == "tool")["content"])
         assert any("一块表盘" in x for x in tool_result["records"])
         said = "".join(e["text"] for e in _drain(ui) if e["type"] == "assistant_delta")
         assert said == "画面中有一块表盘，一直没有人。"                     # 超长部分被截掉

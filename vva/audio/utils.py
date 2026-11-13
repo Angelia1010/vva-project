@@ -47,3 +47,19 @@ def rms_dbfs(pcm: bytes) -> float:
         return -120.0
     rms = float(np.sqrt(np.mean(x * x)))
     return 20.0 * np.log10(max(rms, 1e-3) / 32768.0)
+
+
+async def decode_audio_ffmpeg(data: bytes, sample_rate: int = 16000, timeout: float = 30) -> bytes:
+    """用 ffmpeg 把任意格式的音频（如飞书语音消息的 opus）解码成单声道 PCM16。需要系统安装 ffmpeg。"""
+    import asyncio
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("需要安装 ffmpeg 才能处理语音消息（sudo apt install ffmpeg）")
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+        "-f", "s16le", "-ac", "1", "-ar", str(sample_rate), "pipe:1",
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    out, err = await asyncio.wait_for(proc.communicate(data), timeout)
+    if proc.returncode != 0:
+        raise RuntimeError(f"音频解码失败：{err.decode(errors='ignore')[:200]}")
+    return out

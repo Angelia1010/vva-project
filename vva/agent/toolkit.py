@@ -56,18 +56,19 @@ class ToolSet:
 
     def __init__(self, *providers: ToolProvider) -> None:
         self.providers = [p for p in providers if p is not None]
-        self._route: dict[str, ToolProvider] = {}
+        seen: set[str] = set()
         for p in self.providers:
-            for name in p.names():
-                if name in self._route:
-                    raise ValueError(f"工具名重复：{name}")
-                self._route[name] = p
+            dup = seen & p.names()
+            if dup:
+                raise ValueError(f"工具名重复：{'、'.join(dup)}")
+            seen |= p.names()
 
     def schemas(self) -> list[dict]:
         return [s for p in self.providers for s in p.schemas()]
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
-        p = self._route.get(name)
+        # 每次按当前的工具定义分发：有的工具会随配置变化出现或消失（如场景包里新增了目标）
+        p = next((p for p in self.providers if name in p.names()), None)
         if p is None:
             return json.dumps({"error": f"未知工具 {name}"}, ensure_ascii=False)
         return await p.call(name, args)

@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from vva.agent.toolkit import ToolProvider, fn_schema as _fn
+from vva.core import turn
 from vva.core.bus import EventBus
 from vva.memory.keyframes import KeyframeStore
 from vva.memory.store import KIND_OBSERVATION, MemoryEvent, MemoryStore
@@ -101,6 +102,7 @@ class MemoryTools(ToolProvider):
         jpeg = self.keyframes.load(ev.frame) if ev.frame else None
         if jpeg is None:
             return {"error": "当时的画面文件已被清理"}
+        turn.attach(jpeg, f"{fmt_dt(ev.ts, now)} 的画面")
         result = await ask_look(self.vlm, [jpeg], question, self.scene_hint, self.look_max_tokens)
         return {"time": fmt_dt(ev.ts, now), "record": ev.summary, **result}
 

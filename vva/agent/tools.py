@@ -10,6 +10,7 @@ from typing import Any
 
 from vva.agent import prompts
 from vva.agent.toolkit import ToolProvider, fn_schema as _fn
+from vva.core import turn
 from vva.core.bus import TOPIC_UI, EventBus
 from vva.core.jsonutil import parse_json
 from vva.core.types import fmt_ts
@@ -107,7 +108,9 @@ class VisionTools(ToolProvider):
                 info["zoomed"] = f"已定位并放大：{objs[0]['label']}"
             else:
                 info["zoomed"] = f"没有定位到“{target}”，已改看整幅画面"
-        return {**info, **await self._ask([self._prepare(bf, region)], question)}
+        image = self._prepare(bf, region)
+        turn.attach(image, info.get("zoomed", ""))
+        return {**info, **await self._ask([image], question)}
 
     # ------------------------------------------------------------------ tools
     async def tool_look_now(self, question: str, target: str | None = None, **_: Any) -> dict:

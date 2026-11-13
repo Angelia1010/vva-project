@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from vva.app import App
+from vva.app import WEB_SESSION, App
 from vva.core.bus import TOPIC_UI
 
 log = logging.getLogger(__name__)
@@ -116,7 +116,9 @@ def create_web_app(app: App) -> FastAPI:
 
         async def sender():
             while True:
-                await sock.send_json(await q.get())
+                ev = await q.get()
+                if ev.get("session") in (None, WEB_SESSION):   # 只推送网页会话和全局事件（时间线、告警等）
+                    await sock.send_json(ev)
 
         send_task = asyncio.create_task(sender())
         try:
@@ -134,7 +136,7 @@ def create_web_app(app: App) -> FastAPI:
                         app.voice.ptt_release()
                 elif t == "reset":
                     await app.interrupt()
-                    app.agent.reset()
+                    app.reset_session(WEB_SESSION)
                     await sock.send_json({"type": "reset_ok"})
         except (WebSocketDisconnect, RuntimeError):
             pass
@@ -212,5 +214,10 @@ def create_web_app(app: App) -> FastAPI:
                     app.audio_out.remove_clear_listener(on_clear)
                 with contextlib.suppress(Exception):
                     await sock.close()
+
+    # ------------------------------------------------------------ 场景包管理
+    if app.scene:
+        from vva.web.scene_api import register_scene_routes
+        register_scene_routes(api, app.scene, app.snapshot, web_cfg.get("admin_token") or "", STATIC_DIR)
 
     return api

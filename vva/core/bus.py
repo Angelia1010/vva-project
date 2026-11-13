@@ -11,6 +11,8 @@ import logging
 from collections import defaultdict
 from typing import Any
 
+from vva.core import turn
+
 log = logging.getLogger(__name__)
 
 TOPIC_UI = "ui"
@@ -38,7 +40,11 @@ class EventBus:
             subs.remove(q)
 
     def publish(self, topic: str, data: dict[str, Any]) -> None:
-        """只能在事件循环线程中调用。"""
+        """只能在事件循环线程中调用。推往前端的事件会自动带上当前对话的会话编号。"""
+        if topic == TOPIC_UI and "session" not in data:
+            sid = turn.current_session()
+            if sid:
+                data = {**data, "session": sid}
         for q in list(self._subs.get(topic, [])):
             try:
                 q.put_nowait(data)
