@@ -33,7 +33,7 @@ from vva.notify import NotifyRouter, describe_target
 
 log = logging.getLogger(__name__)
 
-__all__ = ["DutyManager", "DutyBook", "DutyStore", "Duty"]
+__all__ = ["Duty", "DutyBook", "DutyManager", "DutyStore"]
 
 
 class DutyManager:
@@ -51,12 +51,30 @@ class DutyManager:
         self.target_problem: Callable[[str], str] = lambda t: ""
         self.router = NotifyRouter(bus, station_name, labels=lambda: {o["id"]: o["label"] for o in self.target_options()})
         self.verifier = Verifier(buffer, vlm, delay=cfg.get("verify_delay", 2.0), max_side=cfg.get("verify_side", 1280),
-                                 scene=scene, references=references)
+                                 scene=scene, references=references, negatives=self._negative_images)
         self.engine = DutyEngine(self.book, self.alerts, self.router, bus, self.verifier, observe_interval)
         self.scheduler = DutyScheduler(self.book, self.engine, self.router, bus, buffer, vlm, report, scene,
                                        max_side=cfg.get("verify_side", 1280))
         self.tools = DutyTools(self, bus)
-        self.book.on_change(lambda _: bus.publish(TOPIC_UI, {"type": "duties_changed"}))
+        self.book.on_change(lambda _: bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None}))
+
+    def _negative_images(self, duty: Duty) -> list[bytes]:
+        out = []
+        for rel in duty.negatives[-2:]:
+            path = self.alerts.store.image_path(rel)
+            if path:
+                with open(path, "rb") as f:
+                    out.append(f.read())
+        return out
+
+    def add_negative(self, alert: Any) -> bool:
+        """把一条误报的截图加入职责的“不算”例子（最多保留 3 张）。"""
+        duty = self.book.get(alert.duty_id)
+        if duty is None or not alert.images:
+            return False
+        rel = alert.images[-1]["file"]
+        self.book.update(duty.id, actor="值班员", negatives=[*[n for n in duty.negatives if n != rel], rel][-3:])
+        return True
 
     # ---------------------------------------------------------------- 展示
     def target_labels(self, targets: list[str]) -> str:

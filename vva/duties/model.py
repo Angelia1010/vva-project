@@ -69,6 +69,7 @@ class Duty:
     cooldown_s: float = 600.0                   # 同一件事多久内只报一次
     objects: list[str] = field(default_factory=list)    # 引用的技能目标（带上它们的参考图）
     rule_ref: str = ""                          # 关联的规章依据
+    negatives: list[str] = field(default_factory=list)  # 误报截图（告警截图路径），复核时作为“不算”的例子
     source: str = "web"                         # web | voice | dingtalk | feishu | skill | template | legacy
     created_by: str = ""
     created: float = field(default_factory=time.time)

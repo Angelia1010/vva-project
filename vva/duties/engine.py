@@ -63,7 +63,7 @@ class DutyEngine:
                 if not r.ok:
                     log.info("职责 %s 复核不成立：%s", duty.name, r.evidence)
                     self.book.snooze(duty_id, SNOOZE_AFTER_REJECT)
-                    self.bus.publish(TOPIC_UI, {"type": "duty_check", "duty_id": duty_id, "ok": False,
+                    self.bus.publish(TOPIC_UI, {"type": "duty_check", "session": None, "duty_id": duty_id, "ok": False,
                                                 "text": f"{duty.name}：复核未确认"})
                     return
                 evidence, box = r.evidence or evidence, r.box
@@ -88,7 +88,7 @@ class DutyEngine:
             self.alerts.store.add_event(alert.id, "系统", "试运行中，只记录不通知")
         else:
             self.router.dispatch_alert(alert, duty, lambda text: self.alerts.store.add_event(alert.id, "系统", text))
-        self.bus.publish(TOPIC_UI, {"type": "duties_changed"})
+        self.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})
         return alert
 
     async def close(self) -> None:

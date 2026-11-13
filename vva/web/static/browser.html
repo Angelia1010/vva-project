@@ -3,100 +3,157 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>监控值守台</title>
+<title>值守台 - AI 值守台</title>
 <link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/duties.css">
 <style>
-  main.desk { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px;
-              height: calc(100vh - 59px); }
-  .col { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .station { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 24px 0; }
+  .station .badge { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 15px; font-size: 13px;
+                    background: rgba(61,214,140,.12); color: #7BE6B1; }
+  .station .badge.off { background: rgba(242,179,61,.12); color: #F5D08A; }
+  .station .name { font-size: 20px; font-weight: 700; }
+  .station .area { color: var(--ink-2); font-size: 13px; }
+  .station .spacer { flex: 1; }
+  .stat { display: flex; align-items: baseline; gap: 6px; }
+  .stat span { color: var(--ink-2); font-size: 12px; }
+  .stat b { font: 600 22px/1 var(--digits); font-variant-numeric: tabular-nums; }
+  .stat b.hot { color: var(--alert-soft); }
 
-  /* 画面：深色取景框，四角刻线提示这是监控画面 */
-  .viewport { position: relative; background: #0f171f; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; }
+  main.desk { display: flex; flex-wrap: wrap; gap: 16px; padding: 14px 24px 24px; align-items: stretch; }
+  .col-duties { flex: 1 1 300px; max-width: 350px; display: flex; flex-direction: column; gap: 10px; }
+  .col-view { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .col-cmd { flex: 1 1 340px; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
+  .col-duties .head { display: flex; align-items: center; gap: 8px; }
+  .col-duties .head h2 { margin: 0; font-size: 16px; }
+  .col-duties .head .n { font: 15px var(--digits); color: var(--ink-2); }
+  .empty-duties { padding: 16px; border-radius: 8px; border: 1px dashed var(--line); color: var(--ink-3); font-size: 13px; line-height: 1.8; }
+  .empty-duties b { color: var(--ink); }
+  .ask { margin-top: auto; padding: 12px; border-radius: 8px; background: var(--bar); color: var(--ink-2); font-size: 12px; line-height: 1.8; }
+  .ask b { display: block; color: var(--ink-3); font-weight: 500; }
+  .setup-line { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+
+  /* 画面：取景框，四角刻线 */
+  .viewport { position: relative; background: #0C1522; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; }
   .viewport video, .viewport img { display: block; width: 100%; height: 100%; object-fit: contain; }
   .viewport canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .viewport .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #8696a5; }
-  .viewport::after { content: ""; position: absolute; inset: 10px; pointer-events: none;
+  .viewport .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
+  .viewport::after { content: ""; position: absolute; inset: 10px; pointer-events: none; opacity: .5;
     background:
-      linear-gradient(#8fb8dc, #8fb8dc) top left / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) top left / 2px 18px no-repeat,
-      linear-gradient(#8fb8dc, #8fb8dc) top right / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) top right / 2px 18px no-repeat,
-      linear-gradient(#8fb8dc, #8fb8dc) bottom left / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) bottom left / 2px 18px no-repeat,
-      linear-gradient(#8fb8dc, #8fb8dc) bottom right / 18px 2px no-repeat, linear-gradient(#8fb8dc, #8fb8dc) bottom right / 2px 18px no-repeat;
-    opacity: .55; }
+      linear-gradient(#45C8F5, #45C8F5) top left / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) top left / 2px 18px no-repeat,
+      linear-gradient(#45C8F5, #45C8F5) top right / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) top right / 2px 18px no-repeat,
+      linear-gradient(#45C8F5, #45C8F5) bottom left / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) bottom left / 2px 18px no-repeat,
+      linear-gradient(#45C8F5, #45C8F5) bottom right / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) bottom right / 2px 18px no-repeat; }
+  .hud { position: absolute; padding: 3px 8px; border-radius: 4px; background: rgba(8,14,24,.72); font-size: 12px; color: #C8D4E2; display: inline-flex; align-items: center; gap: 6px; }
   .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
   .controls .spacer { flex: 1; }
-  .meter { width: 110px; height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+  .meter { width: 100px; height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
   .meter div { height: 100%; width: 0; background: var(--lamp-ok); transition: width .08s; }
 
-  /* 现场配置：一条横栏，两项之间用竖线分开 */
-  .setup { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border: 1px solid var(--rule);
-           border-left: 4px solid var(--steel); border-radius: 6px; }
-  .setup > div { padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
-  .setup > div + div { border-left: 1px solid var(--rule); }
-  .setup h3 { margin: 0; font-size: 15px; }
-  .setup p { margin: 0; color: var(--ink-2); font-size: 13px; flex: 1; }
-  .setup p b { color: var(--ink); font-family: var(--digits); font-size: 16px; font-weight: 600; }
-  .setup a.go { align-self: flex-start; margin-top: 4px; padding: 6px 14px; border-radius: 4px; background: var(--steel);
-                color: #fff; text-decoration: none; font-size: 13px; }
-  .setup a.go:hover { background: #1b4366; }
-  .setup .empty { color: var(--lamp-busy); }
-
-  .timeline { flex: 1; min-height: 140px; display: flex; flex-direction: column; }
+  .timeline { display: flex; flex-direction: column; min-height: 150px; max-height: 260px; }
   .list { overflow-y: auto; flex: 1; font-size: 13px; }
-  .tl-item { padding: 6px 0; border-bottom: 1px solid #e3e8ec; display: flex; gap: 10px; }
-  .tl-item .t { color: var(--ink-2); font-family: var(--digits); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
-  .tl-item .anom { color: var(--lamp-alert); }
-
-  /* 指令区 */
-  .command { display: flex; flex-direction: column; min-height: 0; }
-  #chat { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; }
-  .msg { max-width: 88%; padding: 8px 12px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; border-radius: 6px; }
-  .msg.user { align-self: flex-end; background: var(--steel); color: #fff; border-bottom-right-radius: 0; }
-  .msg.bot { align-self: flex-start; background: #fff; border: 1px solid var(--rule); border-bottom-left-radius: 0; }
-  .msg.sys { align-self: stretch; background: #fdf0ee; color: #8a2a20; border-left: 3px solid var(--lamp-alert); font-size: 13px; border-radius: 0; }
-  .msg .src { font-size: 11px; opacity: .75; margin-bottom: 2px; }
-  .tool { align-self: flex-start; font-size: 12px; color: var(--ink-2); padding-left: 2px; font-family: var(--digits); }
-  #rules { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
-  form#form { display: flex; gap: 8px; margin-top: 10px; }
-  form#form input { font-size: 15px; padding: 10px 12px; }
-  form#form button { flex: 0 0 auto; white-space: nowrap; padding: 0 20px; }
-  #chat:empty::before { content: "说话或在下方输入指令，例如：画面里有几个人？桌上的保温杯是什么颜色？上午 9 点左右发生了什么？有人离开座位就提醒我。";
-    margin: auto 0; padding: 0 12%; text-align: center; color: var(--ink-2); line-height: 1.9; }
+  .tl-item { padding: 6px 0; border-bottom: 1px solid #1A2A42; display: flex; gap: 10px; flex-wrap: wrap; }
+  .tl-item .t { color: var(--ink-2); font-family: var(--digits); font-variant-numeric: tabular-nums; flex: 0 0 auto; font-size: 14px; }
+  .tl-item .anom { color: var(--alert-soft); width: 100%; padding-left: 58px; }
   #timeline:empty::before { content: "后台每隔几秒记录一次画面，开启摄像头后会出现在这里。"; color: var(--ink-2); }
-  #btn-ptt.primary { min-width: 104px; }
 
-  @media (max-width: 960px) {
-    main.desk { grid-template-columns: 1fr; height: auto; }
-    .command { min-height: 70vh; }
+  .alerts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .alerts-head h2 { margin: 0; font-size: 15px; }
+  .alert-item + .alert-item { margin-top: 14px; padding-top: 14px; border-top: 1px solid #2A2030; }
+  .alert-item .sent { color: var(--ink-2); font-size: 12px; margin: 8px 0; }
+  .alert-item .btns { display: flex; gap: 8px; }
+  .alert-item .btns button { flex: 1; }
+  .no-alert { color: var(--ink-2); font-size: 13px; }
+
+  .command { flex: 1; min-height: 380px; display: flex; flex-direction: column; gap: 10px; }
+  .command .head { display: flex; align-items: center; gap: 8px; }
+  .command .head h2 { margin: 0; font-size: 15px; }
+  #chat { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 2px; min-height: 160px; }
+  .msg { max-width: 88%; padding: 8px 12px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; border-radius: 10px; }
+  .msg.user { align-self: flex-end; background: #1E4E7A; border-bottom-right-radius: 2px; }
+  .msg.bot { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--rule); border-bottom-left-radius: 2px; }
+  .msg.sys { align-self: stretch; background: rgba(255,107,94,.08); color: #FFC2BB; border: 1px solid rgba(255,107,94,.25); font-size: 13px; }
+  .msg .src { font-size: 11px; opacity: .75; margin-bottom: 2px; }
+  .tool { align-self: flex-start; font-size: 12px; color: var(--ink-2); padding-left: 2px; }
+  #chat:empty::before { content: "说话或在下方输入指令，例如：你负责哪些事？门口现在有几个人？上午 9 点左右发生了什么？有快递到门口就告诉我。";
+    margin: auto 0; padding: 0 10%; text-align: center; color: var(--ink-2); line-height: 1.9; }
+  .voice { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: var(--bar); border: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
+  .voice.on { background: rgba(69,200,245,.08); border-color: rgba(69,200,245,.35); color: #7FD8F7; }
+  .voice .bars { display: flex; align-items: center; gap: 3px; height: 16px; }
+  .voice .bars span { width: 3px; height: 5px; border-radius: 2px; background: currentColor; opacity: .5; }
+  .voice.on .bars span { opacity: 1; }
+  @media (prefers-reduced-motion: no-preference) {
+    .voice.on .bars span { animation: eq .9s ease-in-out infinite; }
+    .voice.on .bars span:nth-child(2) { animation-delay: .15s; } .voice.on .bars span:nth-child(3) { animation-delay: .3s; }
+    .voice.on .bars span:nth-child(4) { animation-delay: .45s; }
   }
-  @media (max-width: 520px) { .setup { grid-template-columns: 1fr; } .setup > div + div { border-left: 0; border-top: 1px solid var(--rule); } }
+  @keyframes eq { 50% { height: 16px; } }
+  .voice .said { color: #D3DCE7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  form#form { display: flex; gap: 8px; margin: 0; }
+  form#form input { font-size: 14px; height: 44px; }
+  form#form button { flex: 0 0 auto; min-width: 64px; }
+  #btn-ptt.primary { min-width: 104px; }
+  @media (max-width: 960px) { .col-duties, .col-cmd { max-width: none; } }
 </style>
 </head>
 <body>
 <header class="duty">
-  <span class="brand">监控值守台</span>
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
   <nav aria-label="页面">
-    <a href="/browser" aria-current="page">监控</a>
+    <a href="/browser" aria-current="page">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
     <a href="/skills">技能</a>
     <a href="/knowledge">知识库</a>
-    <a href="/feishu">飞书</a>
-    <a href="/dingtalk">钉钉</a>
+    <a href="/settings">设置</a>
   </nav>
   <div class="lamps">
+    <div class="stat"><span>今日告警</span><b id="st-today">0</b></div>
+    <div class="stat"><span>待处理</span><b id="st-pending">0</b></div>
     <span id="pill-conn" class="pill">未连接</span>
     <span id="pill-cam" class="pill">摄像头关闭</span>
     <span id="pill-mic" class="pill">麦克风关闭</span>
-    <span id="pill-state" class="pill">空闲</span>
   </div>
+  <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
   <span id="clock" class="clock" aria-label="当前时间"></span>
 </header>
-<div id="notice"></div>
+<div id="notice" role="status"></div>
+
+<div class="station">
+  <span class="badge" id="st-badge"><span class="dot running" aria-hidden="true"></span><span id="st-state">值守中</span></span>
+  <span class="name" id="st-name">正在读取…</span>
+  <span class="area" id="st-area"></span>
+  <span class="spacer"></span>
+  <span class="area" id="st-owner"></span>
+  <a href="/settings" style="font-size:13px">岗位设置</a>
+</div>
+
 <main class="desk">
-  <section class="col">
-    <div class="panel">
+  <!-- 左：我的职责 -->
+  <aside class="panel col-duties" aria-labelledby="t-duties">
+    <div class="head">
+      <h2 id="t-duties">我的职责</h2><span class="n" id="duty-n"></span>
+      <span style="flex:1"></span>
+      <button type="button" class="primary" id="btn-add-duty">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg> 添加职责</button>
+    </div>
+    <div id="duties" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div id="temps-wrap" style="display:none;flex-direction:column;gap:8px">
+      <h3 class="group-title">临时任务</h3>
+      <div id="temps" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <div class="ask"><b>你可以这样问我</b>你负责哪些事？门口现在有几个人？今天有几次告警？上午 9 点左右发生了什么？有快递到门口就告诉我。</div>
+    <div class="setup-line"><a href="/skills" id="setup-skill">技能</a><a href="/knowledge" id="setup-kb">知识库</a><a href="/duties">管理全部职责</a></div>
+  </aside>
+
+  <!-- 中：画面 -->
+  <section class="col-view" aria-label="实时画面">
+    <div class="panel" style="padding:10px">
       <div class="viewport">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
         <div id="placeholder" class="placeholder">点击下方“开启摄像头”</div>
+        <span class="hud" style="left:14px;top:12px"><span class="dot error" aria-hidden="true"></span>LIVE · <span id="hud-name"></span></span>
+        <span class="hud" style="left:14px;bottom:12px"><span class="dot temp" aria-hidden="true"></span><span id="hud-watch">正在值守</span></span>
       </div>
       <div class="controls">
         <button id="btn-cam" class="primary">开启摄像头</button>
@@ -112,43 +169,39 @@
         <div class="meter" title="麦克风音量"><div id="meter"></div></div>
       </div>
     </div>
-
-    <div class="setup" aria-label="现场配置">
-      <div>
-        <h3>技能</h3>
-        <p id="setup-scene">正在读取…</p>
-        <a class="go" href="/skills">管理技能</a>
-      </div>
-      <div>
-        <h3>知识库</h3>
-        <p id="setup-kb">正在读取…</p>
-        <a class="go" href="/knowledge">上传和管理文档</a>
-      </div>
-    </div>
-
     <div class="panel timeline">
       <h2>画面时间线</h2>
       <div id="timeline" class="list"></div>
     </div>
   </section>
 
-  <section class="panel command">
-    <h2>指令</h2>
-    <div id="chat"></div>
-    <div id="rules"></div>
-    <form id="form">
-      <input id="input" type="text" placeholder="说话或在这里输入，如：画面里有几个人？上午 9 点左右发生了什么？" autocomplete="off">
-      <button class="primary" type="submit">发送</button>
-    </form>
-    <div class="controls">
-      <button id="btn-stop" type="button">打断</button>
-      <button id="btn-reset" type="button">清空对话</button>
-      <span class="spacer"></span>
-      <a href="/" class="hint">服务端摄像头页面</a>
+  <!-- 右：告警与指令 -->
+  <section class="col-cmd">
+    <div class="panel alert-panel calm" id="alert-panel" aria-labelledby="t-alerts">
+      <div class="alerts-head">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FF8A7F" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5a4 4 0 0 0-4 4V9l-1.5 2.5h11L12 9V5.5a4 4 0 0 0-4-4ZM6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+        <h2 id="t-alerts">待处理告警</h2><span class="num" id="alert-n" style="color:var(--alert-soft)"></span>
+        <span style="flex:1"></span><a href="/alerts" style="font-size:12px">告警中心</a>
+      </div>
+      <div id="alerts"></div>
+    </div>
+    <div class="panel command">
+      <div class="head"><h2>指令</h2><span style="flex:1"></span>
+        <button id="btn-stop" type="button" class="ghost">打断</button>
+        <button id="btn-reset" type="button" class="ghost">清空对话</button></div>
+      <div id="chat" aria-live="polite"></div>
+      <div class="voice" id="voice"><div class="bars" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <span id="voice-state">空闲</span><span class="said" id="voice-said"></span></div>
+      <form id="form">
+        <label for="input" class="sr-only">输入指令</label>
+        <input id="input" type="text" placeholder="说话或输入，如：有人吸烟就通知我" autocomplete="off">
+        <button class="primary" type="submit">发送</button>
+      </form>
     </div>
   </section>
 </main>
 <script src="/static/console.js"></script>
+<script src="/static/duty-editor.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
@@ -156,7 +209,7 @@ const chat = $("chat"), tl = $("timeline"), video = $("video"), overlay = $("ove
 let caps = {}, ws = null, botMsg = null, boxes = [], boxTimer = null;
 
 // ============================================================ 通用界面
-function pill(id, text, cls) { const el = $(id); el.textContent = text; el.className = "pill " + (cls || ""); }
+function pill(id, text, cls) { const el = $(id); if (el) { el.textContent = text; el.className = "pill " + (cls || ""); } }
 function scroll(el) { el.scrollTop = el.scrollHeight; }
 function addMsg(cls, text, src) {
   const d = document.createElement("div"); d.className = "msg " + cls;
@@ -164,11 +217,14 @@ function addMsg(cls, text, src) {
   const body = document.createElement("span"); body.textContent = text || ""; d.appendChild(body);
   chat.appendChild(d); scroll(chat); return body;
 }
-const TOOL_NAMES = {look_now:"看当前画面", locate:"定位目标", look_back:"回看", look_sequence:"看一段时间",
-  search_timeline:"查时间线", add_watch:"添加监控", list_watches:"查看监控", remove_watch:"删除监控"};
+const TOOL_NAMES = {look_now: "看当前画面", locate: "定位目标", look_back: "回看", look_sequence: "看一段时间",
+  search_timeline: "查时间线", search_memory: "查记录", look_at_time: "看当时的画面", list_duties: "查看职责",
+  add_task: "添加临时任务", remove_task: "取消临时任务", pause_duty: "暂停职责", resume_duty: "恢复职责",
+  query_alerts: "查告警", ask_knowledge: "查知识库", remember_note: "记下备忘", forget_note: "删除备忘"};
 function addTool(name, args) {
   const d = document.createElement("div"); d.className = "tool";
-  d.textContent = "🔧 " + (TOOL_NAMES[name] || name) + " " + JSON.stringify(args);
+  const brief = Object.values(args || {}).filter(v => typeof v === "string").join("，").slice(0, 40);
+  d.textContent = "· " + (TOOL_NAMES[name] || name) + (brief ? "：" + brief : "");
   chat.appendChild(d); scroll(chat);
 }
 function addTimeline(e) {
@@ -179,52 +235,135 @@ function addTimeline(e) {
   if (e.anomalies && e.anomalies.length) { const a = document.createElement("div"); a.className = "anom"; a.textContent = "异常：" + e.anomalies.join("、"); d.appendChild(a); }
   tl.prepend(d); while (tl.children.length > 200) tl.removeChild(tl.lastChild);
 }
-function renderRules(rules) {
-  $("rules").textContent = rules && rules.length ? "监控中：" + rules.map(r => `${r.id} ${r.condition}`).join("；") : "";
-}
 function notice(text) { const n = $("notice"); n.textContent = text; n.style.display = text ? "block" : "none"; }
+function setVoice(state, said, on) {
+  $("voice-state").textContent = state; $("voice").className = "voice" + (on ? " on" : "");
+  if (said !== undefined) $("voice-said").textContent = said ? "“" + said + "”" : "";
+}
 
 // 在视频上画框：框坐标是相对原始画面的 0~1，需换算到 object-fit:contain 后的显示区域
 function drawBoxes() {
   const W = overlay.clientWidth, H = overlay.clientHeight;
   overlay.width = W; overlay.height = H;
   const ctx = overlay.getContext("2d"); ctx.clearRect(0, 0, W, H);
-  const srv = $("server-video");   // 服务端视频源（RTSP 等）模式下显示的画面
+  const srv = $("server-video");
   const vw = srv ? srv.naturalWidth : video.videoWidth, vh = srv ? srv.naturalHeight : video.videoHeight;
   if (!vw || !boxes.length) return;
   const s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
-  ctx.lineWidth = 3; ctx.strokeStyle = "#ffcc00"; ctx.fillStyle = "#ffcc00"; ctx.font = "14px sans-serif";
+  ctx.font = "600 13px 'Noto Sans SC', sans-serif";
   for (const b of boxes) {
-    const [x1, y1, x2, y2] = b.box;
-    ctx.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh);
-    if (b.label) ctx.fillText(b.label, ox + x1 * dw + 4, Math.max(14, oy + y1 * dh - 6));
+    const color = b.alert ? "#FF6B5E" : "#45C8F5";
+    const [x1, y1, x2, y2] = b.box, x = ox + x1 * dw, y = oy + y1 * dh;
+    ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.strokeRect(x, y, (x2 - x1) * dw, (y2 - y1) * dh);
+    if (b.label) {
+      const w = ctx.measureText(b.label).width + 12, ty = Math.max(0, y - 22);
+      ctx.fillStyle = color; ctx.fillRect(x - 1, ty, w, 20);
+      ctx.fillStyle = b.alert ? "#1A0B0A" : "#051A24"; ctx.fillText(b.label, x + 5, ty + 14);
+    }
   }
 }
 function showBoxes(list) {
   boxes = list || []; drawBoxes();
-  clearTimeout(boxTimer); boxTimer = setTimeout(() => { boxes = []; drawBoxes(); }, 8000);
+  clearTimeout(boxTimer); boxTimer = setTimeout(() => { boxes = []; drawBoxes(); }, 10000);
 }
 window.addEventListener("resize", drawBoxes);
+
+// ============================================================ 岗位、职责、告警
+let overviewTimer = null;
+function refreshSoon() { clearTimeout(overviewTimer); overviewTimer = setTimeout(loadOverview, 300); }
+async function loadOverview() {
+  let o;
+  try { o = await vva.api("GET", "/api/overview"); } catch (e) { return; }
+  const st = o.station;
+  $("st-name").textContent = st.name; $("hud-name").textContent = st.name;
+  $("st-area").textContent = st.area ? "看哪里：" + st.area : "";
+  $("st-owner").textContent = st.owner ? "岗位负责人 " + st.owner : "";
+  $("st-badge").className = "badge" + (st.paused ? " off" : "");
+  $("st-state").textContent = st.paused ? "已暂停值守" : "值守中";
+  $("st-today").textContent = o.stats.today; $("st-pending").textContent = o.stats.pending;
+  $("st-pending").className = o.stats.pending ? "hot" : "";
+  renderDuties(o.duties);
+  renderAlerts(o.open_alerts);
+}
+function renderDuties(list) {
+  const long = list.filter(d => !d.temporary), temps = list.filter(d => d.temporary);
+  const watching = list.filter(d => d.kind === "watch" && d.state === "running").length;
+  $("duty-n").textContent = long.length || "";
+  $("hud-watch").textContent = watching ? `正在值守 ${watching} 项职责` : "当前没有生效的盯守职责";
+  const box = $("duties"); box.innerHTML = "";
+  if (!long.length) {
+    box.innerHTML = `<div class="empty-duties"><b>还没有职责。</b>告诉它要盯什么、发现了通知谁，它会一直值守。<br>
+      <button type="button" class="primary" id="btn-tpl" style="margin-top:10px">从行业模板添加</button></div>`;
+    $("btn-tpl").onclick = () => DutyEditor.openTemplates({ onSaved: loadOverview });
+  }
+  const actions = {
+    test: testDuty,
+    toggle: async (d) => { try { await vva.api("PUT", "/api/duties/" + d.id, { enabled: !d.enabled }); loadOverview(); } catch (e) { notice(e.message); } },
+    edit: (d) => DutyEditor.open(d.temporary ? { ...d, temporary: false, expires: 0, source: "web" } : d, { onSaved: loadOverview }),
+    alerts: (d) => { location.href = "/alerts?duty=" + encodeURIComponent(d.id); },
+  };
+  for (const d of long) box.appendChild(dutyCard(d, actions));
+  $("temps-wrap").style.display = temps.length ? "flex" : "none";
+  const tbox = $("temps"); tbox.innerHTML = "";
+  for (const d of temps) tbox.appendChild(dutyCard(d, { toggle: actions.toggle, edit: actions.edit }));
+}
+async function testDuty(d, btn) {
+  btn.disabled = true; btn.textContent = "检查中…";
+  try {
+    const r = await vva.api("POST", "/api/duties/test", { id: d.id });
+    addMsg("sys", `试一下「${d.name}」：${r.match ? (d.kind === "inspect" ? "异常" : "命中") : (d.kind === "inspect" ? "正常" : "当前未命中")}。${r.evidence || ""}`);
+    if (r.box) showBoxes([{ box: r.box, label: d.name, alert: r.match }]);
+  } catch (e) { notice("检查失败：" + e.message); }
+  btn.disabled = false; btn.textContent = "试一下";
+}
+function renderAlerts(list) {
+  const box = $("alerts");
+  $("alert-n").textContent = list.length || "";
+  $("alert-panel").className = "panel alert-panel" + (list.length ? "" : " calm");
+  if (!list.length) { box.innerHTML = '<p class="no-alert">没有待处理的告警。</p>'; return; }
+  box.innerHTML = "";
+  for (const a of list.slice(0, 3)) {
+    const el = document.createElement("div"); el.className = "alert-item";
+    const img = a.images && a.images.length ? vva.img(a.images[a.images.length - 1].file) : "";
+    el.innerHTML = `<div class="acard"><div class="shot">${img ? `<img src="${img}" alt="告警画面">` : ""}</div>
+      <div class="body"><div class="title">${vva.esc(a.duty_name)} ${a.level === "urgent" ? '<span class="tag urgent">紧急</span>' : a.level === "important" ? '<span class="tag important">重要</span>' : ""}
+        <span class="status ${a.status}">${a.status_label}</span></div>
+        <span class="when">${a.time} · ${vva.ago(a.ts)}</span><span class="ev">${vva.esc(a.evidence)}</span></div></div>
+      <div class="sent">${a.rule_ref ? "依据 " + vva.esc(a.rule_ref) : ""}</div>
+      <div class="btns"><button type="button" class="primary" data-a="resolve">已处理</button><button type="button" data-a="false">误报</button>
+        <button type="button" class="ghost" data-a="ask">追问</button></div>`;
+    el.querySelectorAll("button").forEach(b => b.onclick = async () => {
+      if (b.dataset.a === "ask") { $("input").value = `关于刚才的「${a.duty_name}」告警，现在还是这样吗？`; $("input").focus(); return; }
+      try { await vva.api("POST", `/api/alerts/${a.id}/action`, { action: b.dataset.a, actor: "值班员" }); loadOverview(); }
+      catch (e) { notice(e.message); }
+    });
+    box.appendChild(el);
+  }
+}
+$("btn-add-duty").onclick = () => DutyEditor.open(null, { onSaved: loadOverview });
 
 // ============================================================ 对话通道 /ws
 function handle(ev) {
   switch (ev.type) {
-    case "hello": tl.innerHTML = ""; (ev.timeline || []).forEach(addTimeline); renderRules(ev.status.rules); break;
-    case "user": addMsg("user", ev.text, ev.source === "voice" ? "🎤 语音" : ""); botMsg = null; break;
-    case "assistant_start": botMsg = addMsg("bot", ""); pill("pill-state", "思考中…", "busy"); break;
+    case "hello": tl.innerHTML = ""; (ev.timeline || []).forEach(addTimeline); loadOverview(); break;
+    case "user": addMsg("user", ev.text, ev.source === "voice" ? "语音" : ""); botMsg = null; setVoice("思考中…", ev.source === "voice" ? ev.text : "", true); break;
+    case "assistant_start": botMsg = addMsg("bot", ""); break;
     case "assistant_delta": if (!botMsg) botMsg = addMsg("bot", ""); botMsg.textContent += ev.text; scroll(chat); break;
     case "assistant_end":
       if (ev.interrupted && botMsg) botMsg.textContent += " …（已打断）";
-      botMsg = null; pill("pill-state", "空闲"); break;
+      botMsg = null; if ($("voice-state").textContent === "思考中…") setVoice("空闲", "", false); break;
     case "tool": addTool(ev.name, ev.args); botMsg = null; break;
     case "timeline": addTimeline(ev); break;
-    case "alert": addMsg("sys", "🔔 " + ev.text); break;
-    case "rules": renderRules(ev.rules); break;
+    case "alert": addMsg("sys", ev.text); break;
+    case "alert_new":
+      if (ev.alert && ev.alert.box && ev.alert.status !== "record") showBoxes([{ box: ev.alert.box, label: ev.alert.duty_name, alert: true }]);
+      refreshSoon(); break;
+    case "alert_update": case "duties_changed": case "rules": refreshSoon(); break;
     case "bbox": showBoxes(ev.boxes); break;
-    case "vad": if (ev.state === "start") pill("pill-state", "正在听…", "hot"); else pill("pill-state", "识别中…", "busy"); break;
-    case "tts": if (ev.state === "speaking") pill("pill-state", "正在说…", "busy"); else pill("pill-state", "空闲"); break;
-    case "asr": if (ev.ignored) addMsg("sys", `（${ev.reason || "已忽略"}）${ev.text}`); break;
-    case "error": addMsg("sys", "⚠️ " + ev.message); break;
+    case "vad": if (ev.state === "start") setVoice("正在听", "", true); else setVoice("识别中…", undefined, true); break;
+    case "tts": if (ev.state === "speaking") setVoice("播报中", undefined, true); else setVoice("空闲", "", false); break;
+    case "asr": if (ev.ignored) { addMsg("sys", `（${ev.reason || "已忽略"}）${ev.text}`); setVoice("空闲", "", false); } break;
+    case "error": addMsg("sys", "出错了：" + ev.message); break;
   }
 }
 function connectChat() {
@@ -236,7 +375,7 @@ function connectChat() {
 $("form").onsubmit = (e) => {
   e.preventDefault(); const t = $("input").value.trim();
   if (!t || !ws || ws.readyState !== 1) return;
-  ensurePlayer();   // 用户点击时顺便激活声音播放
+  ensurePlayer();
   ws.send(JSON.stringify({type: "chat", text: t})); $("input").value = "";
 };
 $("btn-stop").onclick = () => { ws && ws.send(JSON.stringify({type: "interrupt"})); stopPlayback(); };
@@ -450,28 +589,19 @@ $("btn-mic").onclick = async () => {
   catch (e) { stopMic(); notice("无法开启语音：" + e.message); }
 };
 
-// ============================================================ 现场配置概况
+// ============================================================ 技能、知识库概况
 async function loadSetup() {
-  const sceneEl = $("setup-scene"), kbEl = $("setup-kb");
   try {
-    const res = await fetch("/api/skills");
-    if (!res.ok) throw new Error();
-    const on = (await res.json()).skills.filter(s => s.enabled);
-    const objs = on.reduce((n, s) => n + s.objects.length, 0);
-    const imgs = on.reduce((n, s) => n + s.objects.reduce((m, o) => m + o.images.length, 0), 0);
-    sceneEl.innerHTML = on.length
-      ? `<b>${on.length}</b> 个技能已启用，<b>${objs}</b> 个特定目标，<b>${imgs}</b> 张参考图`
-      : '<span class="empty">还没有启用的技能。</span>告诉模型现场有什么、专用设备长什么样、怎么判断。';
-  } catch (e) { sceneEl.textContent = "未开启技能"; }
+    const on = (await vva.api("GET", "/api/skills")).skills.filter(s => s.enabled);
+    $("setup-skill").textContent = on.length ? `技能 ${on.length} 个已启用` : "技能：未启用";
+  } catch (e) { $("setup-skill").textContent = "技能"; }
   try {
-    const kb = await (await fetch("/api/knowledge")).json();
-    const ready = kb.documents.filter(d => d.status === "ready").length;
-    kbEl.innerHTML = kb.documents.length
-      ? `<b>${ready}</b> 份文档可用，共 <b>${kb.stats.chunks}</b> 段` + (kb.stats.vector_search ? "，向量检索已开启" : "")
-      : '<span class="empty">还没有文档。</span>上传规章、规程、手册，判断“是否正常、怎么处理”时会查阅。';
-  } catch (e) { kbEl.textContent = "未开启知识库"; }
+    const kb = await vva.api("GET", "/api/knowledge");
+    $("setup-kb").textContent = kb.documents.length ? `知识库 ${kb.documents.length} 份文档` : "知识库：还没有文档";
+  } catch (e) { $("setup-kb").textContent = "知识库"; }
 }
 loadSetup();
+setInterval(loadOverview, 30000);      // 生效时间段变化等需要定时刷新
 
 // ============================================================ 启动检查
 let baseTips = [];
@@ -484,9 +614,8 @@ function showTips() { notice(baseTips.concat(soundTip ? [soundTip] : []).join("�
   try {
     caps = await (await fetch("/api/capabilities")).json();
     if (!caps.video_push) {
-      // 视频来自服务端（RTSP 摄像头等）：显示服务端画面，麦克风照常可用
       const img = document.createElement("img");
-      img.id = "server-video"; img.src = "/video.mjpg"; img.alt = "服务端画面";
+      img.id = "server-video"; img.src = "/video.mjpg"; img.alt = "实时画面";
       img.style.cssText = "display:block;width:100%;height:100%;object-fit:contain";
       img.onload = drawBoxes;
       img.onerror = () => setTimeout(() => { img.src = "/video.mjpg?t=" + Date.now(); }, 2000);

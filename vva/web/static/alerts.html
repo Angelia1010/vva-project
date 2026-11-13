@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>告警 - AI 值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/duties.css">
+<style>
+  .stats { display: flex; gap: 28px; flex-wrap: wrap; }
+  .stats div span { display: block; color: var(--ink-2); font-size: 12px; }
+  .stats div b { font: 600 28px/1.1 var(--digits); font-variant-numeric: tabular-nums; }
+  .stats b.hot { color: var(--alert-soft); }
+  .bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .bar select { min-width: 140px; }
+  .layout { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .rows { flex: 1 1 420px; max-width: 560px; padding: 8px; }
+  .row { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; width: 100%;
+         background: transparent; text-align: left; color: inherit; min-height: 0; }
+  .row:hover { background: var(--panel-2); border-color: transparent; }
+  .row[aria-current="true"] { background: #152741; border-color: #3A5A86; }
+  .row .shot { width: 96px; height: 64px; flex: 0 0 auto; }
+  .row .b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .row .ev { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .t { font: 13px var(--digits); color: var(--ink-2); }
+  .detail { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+  .detail .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .detail figure { margin: 0; }
+  .detail figure .shot { aspect-ratio: 16 / 10; }
+  .detail figcaption { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .why { padding: 12px 14px; border-radius: 8px; background: var(--bar); border: 1px solid #1C2C44; line-height: 1.7; }
+  .why span { display: block; font-size: 12px; color: var(--ink-2); }
+  .events { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .events li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+  .events li .t { width: 64px; flex: 0 0 auto; font: 13px var(--digits); color: var(--ink-2); }
+  .events li .a { color: var(--ink-2); font-size: 12px; }
+  .acts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .empty { padding: 28px; text-align: center; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<header class="duty">
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts" aria-current="page">告警</a>
+    <a href="/skills">技能</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/settings">设置</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+<div class="page" style="max-width:1320px">
+  <div class="page-head">
+    <div><h1>告警中心</h1><p id="sub">职责命中后的记录：截图、依据、通知了谁、谁在什么时候处理的。</p></div>
+    <span class="spacer"></span>
+    <div class="stats">
+      <div><span>今日告警</span><b id="s-today">0</b></div>
+      <div><span>待处理</span><b id="s-pending">0</b></div>
+      <div><span>本周误报率</span><b id="s-false">—</b></div>
+      <div><span>平均响应</span><b id="s-resp">—</b></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="状态" id="f-status">
+      <button type="button" data-v="" aria-pressed="true">全部</button>
+      <button type="button" data-v="pending,handling" aria-pressed="false">待处理</button>
+      <button type="button" data-v="resolved" aria-pressed="false">已处理</button>
+      <button type="button" data-v="false" aria-pressed="false">误报</button>
+      <button type="button" data-v="trial" aria-pressed="false">试运行</button>
+      <button type="button" data-v="record" aria-pressed="false">巡检记录</button>
+    </div>
+    <label for="f-duty" class="sr-only">职责</label>
+    <select id="f-duty"><option value="">全部职责</option></select>
+    <label for="f-days" class="sr-only">时间</label>
+    <select id="f-days"><option value="1">今天</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option></select>
+  </div>
+
+  <div class="layout">
+    <section class="panel rows" aria-label="告警列表" id="rows"></section>
+    <section class="panel detail" aria-label="告警详情" id="detail"><p class="empty">选择左侧的一条告警查看详情。</p></section>
+  </div>
+</div>
+
+<script src="/static/console.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+let status = "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false;
+function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
+const lvl = (l) => l === "urgent" ? '<span class="tag urgent">紧急</span>' : l === "important" ? '<span class="tag important">重要</span>' : "";
+const boxStyle = (b) => b ? `left:${b[0] * 100}%;top:${b[1] * 100}%;width:${(b[2] - b[0]) * 100}%;height:${(b[3] - b[1]) * 100}%` : "";
+function fmtResp(s) { if (s == null) return "—"; return s < 60 ? s + "″" : Math.floor(s / 60) + "′" + String(s % 60).padStart(2, "0") + "″"; }
+
+async function load() {
+  const q = new URLSearchParams({ status, duty: $("f-duty").value, days: $("f-days").value });
+  let r;
+  try { r = await vva.api("GET", "/api/alerts?" + q); } catch (e) { msg(e.message, "err"); return; }
+  const s = r.stats;
+  $("s-today").textContent = s.today; $("s-pending").textContent = s.pending; $("s-pending").className = s.pending ? "hot" : "";
+  $("s-false").textContent = s.false_rate_week == null ? "—" : Math.round(s.false_rate_week * 100) + "%";
+  $("s-resp").textContent = fmtResp(s.avg_response_s);
+  if (!loadedDuties) {
+    loadedDuties = true;
+    const sel = $("f-duty");
+    for (const d of r.duties) { const o = document.createElement("option"); o.value = d.id; o.textContent = d.name; sel.appendChild(o); }
+    if (params.get("duty")) { sel.value = params.get("duty"); return load(); }
+  }
+  const rows = $("rows"); rows.innerHTML = "";
+  if (!r.alerts.length) { rows.innerHTML = '<p class="empty">这段时间没有记录。</p>'; return; }
+  for (const a of r.alerts) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "row";
+    if (a.id === current) b.setAttribute("aria-current", "true");
+    const img = a.images.length ? vva.img(a.images[a.images.length - 1].file) : "";
+    b.innerHTML = `<div class="shot">${img ? `<img src="${img}" alt="" loading="lazy">` : ""}</div>
+      <div class="b"><div style="display:flex;gap:8px;align-items:center"><b>${vva.esc(a.duty_name)}</b>${lvl(a.level)}</div>
+        <span class="ev">${vva.esc(a.evidence)}</span><span class="t">${a.time}${$("f-days").value !== "1" ? " · " + new Date(a.ts * 1000).toLocaleDateString("zh-CN") : ""}</span></div>
+      <span class="status ${a.status}">${a.status_label}</span>`;
+    b.onclick = () => { current = a.id; rows.querySelectorAll(".row").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "true"); showDetail(a.id); };
+    rows.appendChild(b);
+  }
+  if (!current) current = r.alerts[0].id;
+  showDetail(current);
+}
+
+async function showDetail(id) {
+  let a;
+  try { a = await vva.api("GET", "/api/alerts/" + id); } catch (e) { $("detail").innerHTML = `<p class="empty">${vva.esc(e.message)}</p>`; return; }
+  const open = a.status === "pending" || a.status === "handling";
+  $("detail").innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:18px">${vva.esc(a.duty_name)}</h2>${lvl(a.level)}<span class="status ${a.status}">${a.status_label}</span>
+      <span style="flex:1"></span><span class="num" style="color:var(--ink-2);font-size:15px">${new Date(a.ts * 1000).toLocaleString("zh-CN", { hour12: false })}</span></div>
+    <div class="shots">${a.images.map((im, i) => `<figure><div class="shot"><img src="${vva.img(im.file)}" alt="${vva.esc(im.caption)}">
+      ${i === a.images.length - 1 && a.box ? `<div class="box" style="${boxStyle(a.box)}"></div>` : ""}</div><figcaption>${vva.esc(im.caption)}</figcaption></figure>`).join("")
+      || '<p class="muted">没有保存截图。</p>'}</div>
+    <div class="why"><span>判断依据</span>${vva.esc(a.evidence || "—")}${a.rule_ref ? `<span style="margin-top:6px">规章依据：${vva.esc(a.rule_ref)}</span>` : ""}
+      <span style="margin-top:6px">职责内容：${vva.esc(a.condition)}</span></div>
+    <div><div class="muted" style="font-size:12px;margin-bottom:8px">处理经过</div>
+      <ol class="events">${a.events.map(e => `<li><span class="t">${e.time}</span><span>${vva.esc(e.text)} <span class="a">· ${vva.esc(e.actor)}</span></span></li>`).join("")}</ol></div>
+    ${a.status === "record" ? "" : `
+    <div><label class="field" for="note" style="margin-top:0">处理备注</label>
+      <textarea id="note" placeholder="如：已现场劝阻">${vva.esc(a.note || "")}</textarea></div>
+    <div class="acts">
+      <label for="actor" class="sr-only">处理人</label>
+      <input id="actor" type="text" placeholder="处理人" style="width:140px" value="${vva.esc(localStorage.getItem("vva-actor") || "")}">
+      ${a.status === "trial" ? `<button type="button" class="primary" data-a="trial_ok">准确</button><button type="button" data-a="false">不准（误报）</button>` : `
+      <button type="button" class="primary" data-a="resolve">已处理</button>
+      ${open ? '<button type="button" data-a="handling">处理中</button>' : ""}
+      <button type="button" data-a="false">误报</button>`}
+      <span style="flex:1"></span>
+      <label class="switch"><input type="checkbox" id="add-ref" checked>标为误报时，把截图作为“不算”的例子，下次复核参考</label>
+    </div>`}`;
+  $("detail").querySelectorAll("[data-a]").forEach(b => b.onclick = async () => {
+    const actor = $("actor").value.trim() || "值班员";
+    try { localStorage.setItem("vva-actor", actor); } catch (e) {}
+    try {
+      const r = await vva.api("POST", `/api/alerts/${a.id}/action`, { action: b.dataset.a, actor, note: $("note").value.trim(), add_ref: $("add-ref").checked });
+      msg(r.ref_added ? "已标为误报，截图已加入“不算”的例子" : "已更新", "ok"); load();
+    } catch (e) { msg(e.message, "err"); }
+  });
+}
+
+$("f-status").querySelectorAll("button").forEach(b => b.onclick = () => {
+  status = b.dataset.v; current = 0;
+  $("f-status").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  load();
+});
+$("f-duty").onchange = $("f-days").onchange = () => { current = 0; load(); };
+load();
+setInterval(() => { if (!document.activeElement || !["TEXTAREA", "INPUT"].includes(document.activeElement.tagName)) load(); }, 20000);
+</script>
+</body>
+</html>

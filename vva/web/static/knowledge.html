@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>知识库 - 监控值守台</title>
+<title>知识库 - AI 值守台</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); gap: 20px; align-items: start; }
 
   /* 上传区：页面上最显眼的操作 */
   .drop { display: flex; align-items: center; gap: 18px; padding: 22px 24px; margin-bottom: 16px; cursor: pointer;
-          border: 2px dashed #9aa7b3; border-radius: 6px; background: var(--panel); }
+          border: 2px dashed #5B6B82; border-radius: 6px; background: var(--panel); }
   .drop:hover, .drop.over { border-color: var(--steel); background: var(--steel-soft); }
   .drop .glyph { flex: 0 0 auto; width: 46px; height: 56px; border: 2px solid var(--steel); border-radius: 3px; position: relative; }
   .drop .glyph::before, .drop .glyph::after { content: ""; position: absolute; left: 9px; right: 9px; height: 2px; background: var(--steel); }
@@ -19,7 +19,7 @@
   .drop input { display: none; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #e3e8ec; vertical-align: top; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #22344F; vertical-align: top; }
   th { color: var(--ink-2); font-weight: 600; border-bottom-color: var(--rule); white-space: nowrap; }
   td.num { font-family: var(--digits); font-variant-numeric: tabular-nums; white-space: nowrap; }
   td .name { font-weight: 600; word-break: break-all; }
@@ -36,24 +36,25 @@
 
   .tryout { position: sticky; top: 16px; }
   .tryout .actions { display: flex; gap: 8px; margin-top: 10px; }
-  .answer { margin-top: 14px; padding: 12px 14px; background: #fff; border-left: 4px solid var(--steel); white-space: pre-wrap; display: none; }
+  .answer { margin-top: 14px; padding: 12px 14px; background: var(--panel-2); border-left: 4px solid var(--steel); white-space: pre-wrap; display: none; }
   .answer.none { border-left-color: var(--lamp-busy); }
   .answer .src { margin-top: 8px; color: var(--ink-2); font-size: 12px; }
-  .hit { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e3e8ec; font-size: 13px; white-space: pre-wrap; }
-  .hit .where { color: var(--steel); font-weight: 600; display: block; margin-bottom: 2px; }
+  .hit { margin-top: 10px; padding-top: 10px; border-top: 1px solid #22344F; font-size: 13px; white-space: pre-wrap; }
+  .hit .where { color: var(--cyan); font-weight: 600; display: block; margin-bottom: 2px; }
 
   @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .tryout { position: static; } }
 </style>
 </head>
 <body>
 <header class="duty">
-  <span class="brand">监控值守台</span>
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
   <nav aria-label="页面">
-    <a href="/browser">监控</a>
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
     <a href="/skills">技能</a>
     <a href="/knowledge" aria-current="page">知识库</a>
-    <a href="/feishu">飞书</a>
-    <a href="/dingtalk">钉钉</a>
+    <a href="/settings">设置</a>
   </nav>
   <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
   <span id="clock" class="clock" aria-label="当前时间"></span>

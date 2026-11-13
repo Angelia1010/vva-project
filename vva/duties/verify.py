@@ -13,7 +13,14 @@ from vva.agent.prompts import COORD_RULES
 from vva.core.jsonutil import parse_json
 from vva.duties import prompts
 from vva.duties.model import Duty
-from vva.perception.imaging import box_to_normalized, crop_region, decode_jpeg, encode_jpeg, resize_max_side, validate_region
+from vva.perception.imaging import (
+    box_to_normalized,
+    crop_region,
+    decode_jpeg,
+    encode_jpeg,
+    resize_max_side,
+    validate_region,
+)
 from vva.video.frame_buffer import FrameBuffer
 
 log = logging.getLogger(__name__)
@@ -30,11 +37,14 @@ class VerifyResult:
 class Verifier:
     def __init__(self, buffer: FrameBuffer, vlm: Any, delay: float = 2.0, max_side: int = 1280,
                  crop_min_side: int = 768, scene: Callable[[], str] | None = None,
-                 references: Callable[[str], list[tuple[str, bytes]]] | None = None) -> None:
+                 references: Callable[[str], list[tuple[str, bytes]]] | None = None,
+                 negatives: Callable[[Duty], list[bytes]] | None = None) -> None:
+        """references：按文字取技能目标的参考图；negatives：这条职责标过误报的截图（“不算”的例子）。"""
         self.buffer, self.vlm = buffer, vlm
         self.delay, self.max_side, self.crop_min_side = float(delay), int(max_side), int(crop_min_side)
         self.scene = scene
         self.references = references
+        self.negatives = negatives
 
     def _scene(self) -> str:
         s = self.scene() if self.scene else ""
@@ -49,8 +59,8 @@ class Verifier:
         img = resize_max_side(decode_jpeg(bf.jpeg), self.max_side)
         h, w = img.shape[:2]
         full = encode_jpeg(img, 90)
-        refs = self.references(" ".join([duty.condition, *duty.objects])) if self.references else []
-        refs = refs[:3]
+        refs = (self.references(" ".join([duty.condition, *duty.objects])) if self.references else [])[:3]
+        refs += [("误报的例子（这种情况不算）", j) for j in (self.negatives(duty) if self.negatives else [])[:2]]
         ref_text = ""
         if refs:
             ref_text = f"前 {len(refs)} 张是参考图（" + "；".join(f"图{i}是{label}" for i, (label, _) in enumerate(refs, 1)) + "），"

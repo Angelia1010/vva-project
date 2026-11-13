@@ -36,12 +36,12 @@ class AlertService:
                 self.store.save_image(alert, jpeg, caption)
         self.store.save(alert)
         if status not in ("record",):
-            self.bus.publish(TOPIC_UI, {"type": "alert_new", "alert": alert.to_dict()})
+            self.bus.publish(TOPIC_UI, {"type": "alert_new", "session": None, "alert": alert.to_dict()})
         return alert
 
     def add_event(self, alert_id: int, text: str, actor: str = "系统") -> None:
         self.store.add_event(alert_id, actor, text)
-        self.bus.publish(TOPIC_UI, {"type": "alert_update", "id": alert_id})
+        self.bus.publish(TOPIC_UI, {"type": "alert_update", "session": None, "id": alert_id})
 
     def act(self, alert_id: int, action: str, actor: str = "", note: str = "") -> Alert:
         alert = self.store.get(alert_id)
@@ -56,7 +56,7 @@ class AlertService:
             alert.note = note
         self.store.save(alert)
         self.store.add_event(alert_id, actor or "值班员", ACTION_TEXT[action] + (f"：{note}" if note else ""))
-        self.bus.publish(TOPIC_UI, {"type": "alert_update", "id": alert_id, "alert": alert.to_dict()})
+        self.bus.publish(TOPIC_UI, {"type": "alert_update", "session": None, "id": alert_id, "alert": alert.to_dict()})
         return alert
 
     def detail(self, alert_id: int) -> dict[str, Any] | None:

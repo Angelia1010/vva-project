@@ -8,7 +8,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from vva.agent.toolkit import ToolProvider, fn_schema as _fn
+from vva.agent.toolkit import ToolProvider
+from vva.agent.toolkit import fn_schema as _fn
 from vva.alerts.model import STATUS
 from vva.alerts.service import day_start
 from vva.core import turn

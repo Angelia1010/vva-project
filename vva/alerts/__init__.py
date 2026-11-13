@@ -3,4 +3,4 @@ from vva.alerts.model import ACTIONS, STATUS, Alert
 from vva.alerts.service import AlertService, day_start
 from vva.alerts.store import AlertStore
 
-__all__ = ["Alert", "AlertService", "AlertStore", "ACTIONS", "STATUS", "day_start"]
+__all__ = ["ACTIONS", "STATUS", "Alert", "AlertService", "AlertStore", "day_start"]

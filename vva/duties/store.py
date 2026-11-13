@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS duty_changes (
 """
 
 EDITABLE = ("name", "condition", "kind", "enabled", "mode", "temporary", "expires", "hours", "weekdays", "times",
-            "level", "targets", "voice_text", "verify", "min_duration_s", "cooldown_s", "objects", "rule_ref")
+            "level", "targets", "voice_text", "verify", "min_duration_s", "cooldown_s", "objects", "rule_ref", "negatives")
 
 
 class DutyStore:

@@ -82,7 +82,7 @@ class DutyScheduler:
             duty.last_result = f"{time.strftime('%H:%M', time.localtime(now))} 已发送"
         duty.last_run = now
         self.book.touch(duty)
-        self.bus.publish(TOPIC_UI, {"type": "duties_changed"})
+        self.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})
 
     async def tick(self, now: float | None = None) -> None:
         now = now or time.time()

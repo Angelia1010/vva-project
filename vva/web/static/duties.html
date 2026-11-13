@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>职责 - AI 值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/duties.css">
+<style>
+  .layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .main { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .side { flex: 1 1 300px; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .change { padding: 8px 0; border-bottom: 1px solid #1A2A42; font-size: 13px; }
+  .change:last-child { border-bottom: 0; }
+  .change .when { font: 13px var(--digits); color: var(--ink-2); margin-right: 8px; }
+  .change .who { color: var(--ink-2); font-size: 12px; }
+  .empty { padding: 28px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; color: var(--ink-3); line-height: 1.9; }
+  .legend { display: grid; gap: 8px; font-size: 13px; color: var(--ink-3); }
+  .legend div { display: flex; align-items: center; gap: 8px; }
+</style>
+</head>
+<body>
+<header class="duty">
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">值守台</a>
+    <a href="/duties" aria-current="page">职责</a>
+    <a href="/alerts">告警</a>
+    <a href="/skills">技能</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/settings">设置</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>职责</h1>
+      <p>这个岗位的 AI 值守员要负责的事。盯守类一直看着、发生就通知；巡检类到点检查并记录；汇报类到点发报告。值班员用语音或钉钉下达的临时任务也在这里。</p>
+    </div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="layout">
+    <section class="main" aria-label="职责清单">
+      <div class="bar">
+        <div class="seg" role="group" aria-label="筛选" id="filter">
+          <button type="button" data-f="" aria-pressed="true">全部</button>
+          <button type="button" data-f="watch" aria-pressed="false">盯守</button>
+          <button type="button" data-f="inspect" aria-pressed="false">巡检</button>
+          <button type="button" data-f="report" aria-pressed="false">汇报</button>
+          <button type="button" data-f="temp" aria-pressed="false">临时任务</button>
+        </div>
+        <span style="flex:1"></span>
+        <button type="button" id="btn-tpl">从行业模板添加</button>
+        <button type="button" class="primary" id="btn-add">添加职责</button>
+      </div>
+      <div id="list" class="grid"></div>
+    </section>
+
+    <aside class="side">
+      <section class="panel" aria-labelledby="t-legend">
+        <h2 id="t-legend">状态说明</h2>
+        <div class="legend">
+          <div><span class="dot running"></span>运行中：在生效时间内，正在值守</div>
+          <div><span class="dot"></span>未到生效时间 / 已暂停</div>
+          <div><span class="dot trial"></span>试运行：只记录不通知，到告警中心标注准不准</div>
+          <div><span class="dot error"></span>异常：通知发不出去，按提示到“设置”里处理</div>
+          <div><span class="dot temp"></span>临时任务：语音或钉钉下达，到期自动结束</div>
+        </div>
+      </section>
+      <section class="panel" aria-labelledby="t-changes">
+        <h2 id="t-changes">最近变更</h2>
+        <div id="changes"><p class="muted">没有记录。</p></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script src="/static/console.js"></script>
+<script src="/static/duty-editor.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let all = [], filter = "", msgTimer = null;
+function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
+
+async function load() {
+  try { all = (await vva.api("GET", "/api/duties")).duties; } catch (e) { msg(e.message, "err"); return; }
+  render();
+  try {
+    const ch = (await vva.api("GET", "/api/duties/changes")).changes;
+    $("changes").innerHTML = ch.length ? ch.map(c => `<div class="change"><span class="when">${c.time}</span>${vva.esc(c.action)}
+      ${vva.esc(c.name || c.detail || c.duty_id)}<div class="who">${vva.esc(c.actor)}${c.action === "修改" && c.detail ? " · 改了 " + vva.esc(c.detail) : ""}</div></div>`).join("")
+      : '<p class="muted">没有记录。</p>';
+  } catch (e) {}
+}
+function render() {
+  const box = $("list"); box.innerHTML = "";
+  const list = all.filter(d => !filter || (filter === "temp" ? d.temporary : (!d.temporary && d.kind === filter)));
+  if (!list.length) {
+    box.innerHTML = `<div class="empty" style="grid-column:1/-1">${all.length ? "这一类还没有职责。" : "还没有职责。<br>选一个行业模板一键添加常用职责，或者用一句话描述要它盯什么。"}</div>`;
+    return;
+  }
+  const actions = {
+    test: async (d, b) => {
+      b.disabled = true; b.textContent = "检查中…";
+      try { const r = await vva.api("POST", "/api/duties/test", { id: d.id }); msg(`${d.name}：${r.match ? "命中" : "未命中"}。${r.evidence || ""}`, r.match ? "err" : "ok"); }
+      catch (e) { msg(e.message, "err"); }
+      b.disabled = false; b.textContent = "试一下";
+    },
+    toggle: async (d) => { try { await vva.api("PUT", "/api/duties/" + d.id, { enabled: !d.enabled }); load(); } catch (e) { msg(e.message, "err"); } },
+    edit: (d) => DutyEditor.open(d.temporary ? { ...d, temporary: false, expires: 0 } : d, { onSaved: () => { msg("已保存", "ok"); load(); } }),
+    alerts: (d) => { location.href = "/alerts?duty=" + encodeURIComponent(d.id); },
+  };
+  for (const d of list) box.appendChild(dutyCard(d, actions, { open: true }));
+}
+$("filter").querySelectorAll("button").forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  $("filter").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  render();
+});
+$("btn-add").onclick = () => DutyEditor.open(null, { onSaved: () => { msg("已添加", "ok"); load(); } });
+$("btn-tpl").onclick = () => DutyEditor.openTemplates({ onSaved: (c) => { msg(`已添加 ${Array.isArray(c) ? c.length : 1} 项`, "ok"); load(); } });
+if (location.hash === "#new") DutyEditor.open(null, { onSaved: load });
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

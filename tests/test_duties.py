@@ -239,3 +239,44 @@ def test_app_wires_duties(tmp_path):
         assert app.target_problem("dingtalk:cid") == "钉钉未开启"
         await app.stop()
     asyncio.run(run())
+
+
+def test_duty_web_api(tmp_path):
+    import pytest
+    pytest.importorskip("fastapi")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from tests.test_channels import _app
+    from vva.web.duties_api import register_duty_routes
+
+    app = _app(tmp_path, FakeLLM([]), vlm=FakeVLM(answers={"要复核的情况": YES, "放大图": YES}))
+    app.duties.verifier.delay = 0
+    api = FastAPI()
+    register_duty_routes(api, app, "pw", os.path.join(ROOT, "vva", "web", "static"))
+    c = TestClient(api)
+    h = {"X-Token": "pw"}
+    assert c.post("/api/duties", json={"condition": "有人吸烟"}).status_code == 401
+    assert c.post("/api/duties", headers=h, json={"name": "巡检", "kind": "inspect", "condition": "读表"}).status_code == 400
+    d = c.post("/api/duties", headers=h, json={"name": "禁止吸烟", "condition": "有人吸烟", "targets": ["web"],
+                                               "level": "urgent", "weekdays": ["1", 9]}).json()
+    assert d["id"] == "d1" and d["weekdays"] == [1]
+    assert c.put("/api/duties/d1", headers=h, json={"enabled": False}).json()["enabled"] is False
+    ov = c.get("/api/overview").json()
+    assert ov["duties"][0]["state"] == "paused" and ov["station"]["name"]
+    t = c.post("/api/duties/test", json={"duty": {"condition": "有人吸烟", "name": "试"}}).json()
+    assert t["match"] and t["image"].startswith("data:image/jpeg") and t["hints"]
+    created = c.post("/api/duties/templates/warehouse", headers=h, json={"names": ["明火烟雾", "每日值守报告"],
+                                                                       "targets": ["web"], "mode": "trial"}).json()["created"]
+    assert [x["name"] for x in created] == ["明火烟雾", "每日值守报告"] and created[0]["mode"] == "trial"
+    duty = app.duties.book.get("d1")
+    a = app.duties.alerts.create(duty, "有人吸烟", [("初次发现", b"\xff\xd8x")])
+    lst = c.get("/api/alerts").json()
+    assert lst["alerts"][0]["id"] == a.id and lst["stats"]["pending"] == 1
+    r = c.post(f"/api/alerts/{a.id}/action", json={"action": "false", "actor": "张三", "add_ref": True}).json()
+    assert r["status"] == "false" and r["ref_added"] and app.duties.book.get("d1").negatives
+    assert c.get(f"/api/alerts/image/{r['images'][0]['file']}").status_code == 200
+    assert c.get("/api/alerts/image/../../etc/passwd").status_code == 404
+    assert c.put("/api/station", headers=h, json={"name": "1 号仓库门口", "paused": True}).json()["paused"] is True
+    assert app.rules.paused and c.delete("/api/duties/d1", headers=h).json()["ok"]
+    assert c.get("/duties").status_code == 200 and c.get("/alerts").status_code == 200

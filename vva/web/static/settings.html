@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 - AI 值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<style>
+  .layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .form { flex: 999 1 520px; min-width: 0; }
+  .side { flex: 1 1 300px; max-width: 380px; display: flex; flex-direction: column; gap: 16px; }
+  .link { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid #1E3150; text-decoration: none; color: var(--ink); }
+  .link:hover { border-color: var(--cyan); color: var(--ink); }
+  .link b { display: block; }
+  .link span { color: var(--ink-2); font-size: 12px; }
+  .link .st { margin-left: auto; font-size: 12px; }
+  .savebar { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<header class="duty">
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
+    <a href="/skills">技能</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/settings" aria-current="page">设置</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+<div class="page">
+  <div class="page-head">
+    <div><h1>设置</h1><p>岗位信息会显示在值守台和通知里，也会告诉 AI 值守员画面里是什么地方、有哪些规矩。</p></div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+  <div class="layout">
+    <section class="panel form" aria-labelledby="t-station">
+      <h2 id="t-station">岗位信息</h2>
+      <label class="field" for="name">岗位名称</label>
+      <input id="name" type="text" placeholder="如：1 号仓库门口">
+      <label class="field" for="area">看哪里 <span class="muted">画面覆盖的区域、关键位置</span></label>
+      <textarea id="area" placeholder="如：仓库大门和装卸区，画面左侧是叉车通道，右侧是 3 号货架"></textarea>
+      <label class="field" for="scene">场景说明 <span class="muted">规章、常识，所有职责共用</span></label>
+      <textarea id="scene" placeholder="如：仓库内禁止吸烟；叉车通道禁止行人停留；员工都穿蓝色工服"></textarea>
+      <label class="field" for="owner">岗位负责人</label>
+      <input id="owner" type="text" placeholder="如：张三">
+      <div style="margin-top:16px"><label class="switch"><input type="checkbox" id="paused">暂停值守（所有职责都不判断，指令问答照常）</label></div>
+      <div class="savebar"><button type="button" class="primary" id="save">保存</button></div>
+    </section>
+    <aside class="side">
+      <section class="panel" aria-labelledby="t-channels">
+        <h2 id="t-channels">通知渠道</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <a class="link" href="/dingtalk"><div><b>钉钉</b><span>群里 @机器人 下指令，告警推送到钉钉群</span></div><span class="st" id="st-dingtalk"></span></a>
+          <a class="link" href="/feishu"><div><b>飞书</b><span>群里 @机器人 下指令，告警推送到飞书群</span></div><span class="st" id="st-feishu"></span></a>
+        </div>
+      </section>
+      <section class="panel" aria-labelledby="t-more">
+        <h2 id="t-more">识别与知识</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <a class="link" href="/skills"><div><b>技能</b><span>特定目标的参考图、热词、现场概况</span></div></a>
+          <a class="link" href="/knowledge"><div><b>知识库</b><span>规章、规程、设备手册</span></div></a>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+<script src="/static/console.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let msgTimer = null;
+function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
+async function load() {
+  const s = await vva.api("GET", "/api/station");
+  for (const k of ["name", "area", "scene", "owner"]) $(k).value = s[k] || "";
+  $("paused").checked = !!s.paused;
+  for (const ch of ["dingtalk", "feishu"]) {
+    try {
+      const r = await vva.api("GET", "/api/channels/" + ch);
+      const el = $("st-" + ch);
+      if (!r.settings.enabled) { el.textContent = "未开启"; el.style.color = "var(--ink-2)"; }
+      else if (r.status.started && r.status.receiver !== "error") { el.textContent = "运行中"; el.style.color = "#7BE6B1"; }
+      else { el.textContent = "需要处理"; el.style.color = "var(--alert-soft)"; }
+    } catch (e) {}
+  }
+}
+$("save").onclick = async () => {
+  const body = { name: $("name").value.trim(), area: $("area").value.trim(), scene: $("scene").value.trim(), owner: $("owner").value.trim(), paused: $("paused").checked };
+  try { await vva.api("PUT", "/api/station", body); msg("已保存", "ok"); } catch (e) { msg("没有保存：" + e.message, "err"); }
+};
+load().catch((e) => msg(e.message, "err"));
+</script>
+</body>
+</html>

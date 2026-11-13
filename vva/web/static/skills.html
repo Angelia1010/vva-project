@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>技能 - 监控值守台</title>
+<title>技能 - AI 值守台</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
   .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
@@ -14,16 +14,16 @@
   .roster-head h2 { margin: 0; font-size: 15px; flex: 1; }
   .roster ul { list-style: none; margin: 0; padding: 0; max-height: calc(100vh - 220px); overflow-y: auto; }
   .roster li button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 11px 14px 11px 12px; cursor: pointer;
-                      border-left: 4px solid transparent; border-bottom: 1px solid #e3e8ec; }
-  .roster li button:hover { background: #f1f4f7; }
+                      border-left: 4px solid transparent; border-bottom: 1px solid #22344F; }
+  .roster li button:hover { background: #15243A; }
   .roster li button:focus-visible { outline: 2px solid var(--steel); outline-offset: -2px; }
-  .roster li button[aria-current="true"] { background: var(--steel-soft); border-left-color: var(--steel); }
+  .roster li button[aria-current="true"] { background: var(--steel-soft); border-left-color: var(--cyan); }
   .roster .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-  .roster .name::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #aab5bf; flex: 0 0 auto; }
+  .roster .name::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #5B6B82; flex: 0 0 auto; }
   .roster .on .name::before { background: var(--lamp-ok); }
   .roster .desc { display: block; color: var(--ink-2); font-size: 12px; margin: 2px 0 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tag { font-size: 11px; font-weight: 400; padding: 0 6px; border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-2); }
-  .new-form { display: none; padding: 12px 14px; border-bottom: 1px solid var(--rule); background: #f6f8fa; }
+  .new-form { display: none; padding: 12px 14px; border-bottom: 1px solid var(--rule); background: #15243A; }
   .new-form.open { display: block; }
   .new-form .actions { display: flex; gap: 8px; margin-top: 10px; }
   .roster .empty { padding: 18px 14px; color: var(--ink-2); font-size: 13px; }
@@ -33,7 +33,7 @@
   .detail-head h2 { margin: 0; font-size: 20px; }
   .detail-head .spacer { flex: 1; }
   .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
-  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #b7c1ca; position: relative; cursor: pointer; margin: 0; }
+  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #2A4163; position: relative; cursor: pointer; margin: 0; }
   .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
   .switch input:checked { background: var(--lamp-ok); }
   .switch input:checked::after { left: 18px; }
@@ -41,7 +41,7 @@
 
   .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 0 18px; }
   #f-body { min-height: 260px; font-size: 14px; }
-  .plugin-note { margin-top: 10px; padding: 8px 12px; background: #f1f4f7; border-left: 3px solid var(--steel); font-size: 13px; }
+  .plugin-note { margin-top: 10px; padding: 8px 12px; background: #15243A; border-left: 3px solid var(--steel); font-size: 13px; }
   .detail-actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
   .detail-actions .spacer { flex: 1; }
 
@@ -55,20 +55,20 @@
   .editor .actions { display: flex; gap: 8px; margin-top: 12px; }
   .target { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; padding: 14px; margin-bottom: 10px; }
   .refs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; align-content: start; }
-  .ref { position: relative; aspect-ratio: 4 / 3; background: #dfe5ea; border-radius: 4px; overflow: hidden; }
+  .ref { position: relative; aspect-ratio: 4 / 3; background: #22344F; border-radius: 4px; overflow: hidden; }
   .ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .ref button { position: absolute; top: 4px; right: 4px; padding: 0 7px; line-height: 20px; font-size: 12px;
                 background: rgba(23,33,43,.72); color: #fff; border: 0; border-radius: 3px; }
-  .ref.add { display: flex; align-items: center; justify-content: center; border: 1px dashed #9aa7b3; background: transparent;
+  .ref.add { display: flex; align-items: center; justify-content: center; border: 1px dashed #5B6B82; background: transparent;
              color: var(--ink-2); font-size: 13px; cursor: pointer; text-align: center; padding: 6px; }
-  .ref.add:hover, .ref.add:focus-within { border-color: var(--steel); color: var(--steel); }
+  .ref.add:hover, .ref.add:focus-within { border-color: var(--cyan); color: var(--cyan); }
   .ref.add input { position: absolute; opacity: 0; width: 1px; height: 1px; }
   .target h4 { margin: 0; font-size: 16px; }
   .target .aka { color: var(--ink-2); font-size: 13px; margin-left: 8px; font-weight: 400; }
   .target dl { display: grid; grid-template-columns: 4em 1fr; gap: 4px 10px; margin: 8px 0 10px; font-size: 13px; }
   .target dt { color: var(--ink-2); } .target dd { margin: 0; }
   .target .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .target .warn { color: #8a5a00; font-size: 13px; margin: 8px 0 0; }
+  .target .warn { color: #F5D08A; font-size: 13px; margin: 8px 0 0; }
   .placeholder { padding: 40px 20px; text-align: center; color: var(--ink-2); }
 
   @media (max-width: 960px) {
@@ -81,13 +81,14 @@
 </head>
 <body>
 <header class="duty">
-  <span class="brand">监控值守台</span>
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
   <nav aria-label="页面">
-    <a href="/browser">监控</a>
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
     <a href="/skills" aria-current="page">技能</a>
     <a href="/knowledge">知识库</a>
-    <a href="/feishu">飞书</a>
-    <a href="/dingtalk">钉钉</a>
+    <a href="/settings">设置</a>
   </nav>
   <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
   <span id="clock" class="clock" aria-label="当前时间"></span>
