@@ -456,6 +456,7 @@ systemctl status vva-vlm vva-tts vva-asr vva-app --no-pager | grep -E "●|Activ
 | 现象 | 处理 |
 |---|---|
 | vlm 卡在启动阶段，日志停在 NCCL 相关信息不动 | `models.env` 里取消 `EXTRA_ENV="NCCL_P2P_DISABLE=1"` 的注释，重新启动 |
+| 报 `max_num_seqs (256) exceeds available Mamba cache blocks` | 已在 `VLM_EXTRA_ARGS` 加 `--max-num-seqs 16`；仍报错就改小到报错提示的数以内 |
 | vlm 报显存不足 | `VLM_MAX_LEN` 改为 16384，或 `VLM_GPU_UTIL` 改为 0.92 |
 | 报不认识 `--mm-encoder-tp-mode` | 从 `VLM_EXTRA_ARGS` 里删掉它 |
 | 报 FP8 不支持，或显存仍然不够 | 改用 4 位量化版：下载 Qwen3.6-35B-A3B 的 AWQ 4bit 版本，`VLM_MODEL` 指向它，其余不变 |

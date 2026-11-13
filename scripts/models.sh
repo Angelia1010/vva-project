@@ -42,6 +42,7 @@ launch() {   # launch <name> <venv> <gpu> <命令...>
   if alive "$name"; then c_yel "$name 已在运行 (pid $(pid_of "$name"))"; return 0; fi
   need_venv "$venv"
   local log="$LOG_DIR/$name.log"
+  [ -s "$log" ] && mv -f "$log" "$log.prev"   # 每次启动用新日志，上一次的留在 .prev
   echo "启动 $name（GPU $gpu，端口 $(port_of "$name")），日志：$log"
   echo "  命令：vllm $(render_args "${@:2}")"
   (
