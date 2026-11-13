@@ -255,6 +255,7 @@ def test_app_integration(tmp_path):
         cfg["observer"]["interval"] = 0.3
         cfg["memory"]["dir"] = str(tmp_path / "memory")
         cfg["scene"]["dir"] = str(tmp_path / "scene")
+        cfg["knowledge"]["dir"] = str(tmp_path / "knowledge")
         obs_json = json.dumps({"summary": "一块表盘", "people_count": 0, "objects": ["表盘"],
                                "activities": [], "anomalies": [], "triggered_rules": []}, ensure_ascii=False)
         vlm = FakeVLM(answers={"监控画面": obs_json})

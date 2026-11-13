@@ -220,4 +220,9 @@ def create_web_app(app: App) -> FastAPI:
         from vva.web.scene_api import register_scene_routes
         register_scene_routes(api, app.scene, app.snapshot, web_cfg.get("admin_token") or "", STATIC_DIR)
 
+    # ------------------------------------------------------------ 知识库管理
+    if app.knowledge:
+        from vva.web.knowledge_api import register_knowledge_routes
+        register_knowledge_routes(api, app.knowledge, web_cfg.get("admin_token") or "", STATIC_DIR)
+
     return api
