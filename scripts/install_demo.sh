@@ -2,6 +2,8 @@
 # 安装“办公桌”测试场景：两个技能 + 一份知识库文档。
 #   scripts/install_demo.sh [服务地址]      默认 https://127.0.0.1:9000
 # 已存在的同名技能不会被覆盖。配置了 web.admin_token 时，先 export VVA_ADMIN_TOKEN=口令。
+# 用 sh 运行时自动改用 bash（脚本用到了 bash 的语法）
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
