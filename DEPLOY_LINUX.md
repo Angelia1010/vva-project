@@ -241,7 +241,9 @@ python scripts/check_models.py -c config.yaml --only tts
 | 声音变调（太快或太慢） | `models.tts.sample_rate` 与服务实际采样率不一致；Qwen3-TTS 为 24000 |
 | 页面提示无法使用摄像头/麦克风 | 没有通过 localhost 或 HTTPS 访问，见第 6 步 |
 | 系统听到自己说话、反复打断 | 保持 `voice.mute_mic_while_speaking: true`；或戴耳机 |
-| 环境吵、经常误识别 | 调高 `vad.threshold_db`（如 -38），或设置唤醒词 `voice.wake_words: ["小智"]` |
+| 敲键盘、环境噪声也会触发 | 先 `uv pip install -r requirements.txt` 装上 `webrtcvad-wheels`（日志里出现“VAD 使用 webrtcvad”）；仍然误触发就调高 `vad.threshold_db`（如 -35），或改用 `voice.mode: wake_word`（配 `voice.wake_words: ["小监"]`）或 `push_to_talk` |
+| 正常说话没反应 | 调低 `vad.min_band_ratio`（如 0.5）或 `vad.threshold_db`（如 -45）；`journalctl -u vva-app \| grep 忽略识别结果` 可看到被丢弃的原因 |
+| 想清空长期记忆 | 停掉 `vva-app` 后删除项目目录下的 `data/memory/`，再启动 |
 | 回答慢 | 把 `agent.look_max_side` 降到 896、`observer.interval` 调大；或关闭后台观察 `observer.enabled: false` |
 | 读表不准 | 在 `agent.scene_hint` 写清表的量程、单位；让摄像头离表近一些；8B 模型能力有限时考虑升级更大的模型 |
 

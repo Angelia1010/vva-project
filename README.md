@@ -1,6 +1,7 @@
 # 实时语音视频分析智能体（多模态大模型 + 智能体）
 
-用摄像头“看”现场，用语音对话：可以问画面里的情况、读表、回看刚才发生了什么，也可以设置“当……时提醒我”。
+操作员在监控室用语音向摄像头下达指令，智能体查看监控画面后简短回答：可以问画面里的情况、读表、回看刚才发生了什么，
+查询“今天上午 9 点左右发生了什么”这类历史记录，也可以设置“当……时提醒我”。
 所有模型都通过 **OpenAI 兼容接口**调用，模型由你自行部署后接入。
 
 ## 目录结构
@@ -20,8 +21,13 @@ vva/
                vad.py            语音活动检测与断句
   models/      OpenAI 格式客户端：对话 LLM、视觉 VLM、ASR、TTS
   perception/  后台观察、画面时间线、监控规则、图像工具
-  agent/       智能体（函数调用循环）、视觉工具、提示词
-  voice/       语音会话（断句→识别→播报、打断、唤醒词）
+  agent/       智能体（函数调用循环）、工具基类与视觉工具、提示词
+  memory/      长期记忆 ── store.py      SQLite 存储（记录、摘要、备忘、规则）
+               keyframes.py  关键帧图片
+               recorder.py   订阅事件写入记忆、按期限清理
+               summarizer.py 每 10 分钟生成时段摘要
+               tools.py      search_memory / look_at_time / remember_note 等工具
+  voice/       语音会话（断句→识别→过滤→播报、打断、唤醒词、按住说话）
   app.py       编排：把以上模块组装起来
   web/         网页服务与测试页面
 examples/      自定义摄像头引擎、跨进程推帧/推音频示例
@@ -129,16 +135,44 @@ video:
 | `locate(target)` | 定位目标，返回 0~1 的框坐标（同时在网页画面上画框） |
 | `look_back(seconds_ago, question)` | 看过去某一时刻的画面 |
 | `look_sequence(seconds, question, frames)` | 按时间顺序看多帧，判断动作和变化 |
-| `search_timeline(minutes)` | 查后台记录的文字时间线 |
-| `add_watch` / `list_watches` / `remove_watch` | 管理监控提醒 |
+| `search_timeline(minutes)` | 查最近两小时内后台记录的文字时间线 |
+| `search_memory(start, end, keyword?)` | 按时间段查长期记录（时段摘要、画面记录、提醒、指令），可查到几天前 |
+| `look_at_time(time, question)` | 调出长期记忆中某一时刻保存的画面再看一次 |
+| `add_watch` / `list_watches` / `remove_watch` | 管理监控提醒（规则会持久化，重启后恢复） |
+| `remember_note` / `forget_note` | 记下 / 删除操作员交代的固定信息，回答时自动参考 |
 
-新增工具：在 `vva/agent/tools.py` 的 `schemas()` 里加定义，并实现 `tool_<名称>` 方法即可。
+新增工具：继承 `vva/agent/toolkit.py` 的 `ToolProvider`，在 `schemas()` 里加定义并实现 `tool_<名称>` 方法，再在 `app.py` 里加入 `ToolSet`。
+
+### 角色与回答风格
+
+智能体的定位是“监控值守助手”：下指令的操作员不在画面里，画面中的人都是被监控对象；只处理与监控有关的问题，
+不寒暄、不反问。回答默认一句话，提示词要求不超过 `agent.max_answer_chars` 的一半，超过 `max_answer_chars`
+时在句末截断（兜底）。
+
+### 收音模式（`voice.mode`）
+
+| 模式 | 说明 |
+|---|---|
+| `always` | 一直在听，自动断句（默认） |
+| `wake_word` | 句子里要带唤醒词（`voice.wake_words`）才响应；唤醒后 `wake_timeout` 秒内不用再说 |
+| `push_to_talk` | 按住网页上的“按住说话”按钮或空格键说话，松开后识别，最不容易误触发 |
+
+防误触发分三层：人声检测（webrtcvad + 频谱 + 音量）→ 连续 240ms 人声才算开始、人声不足 0.5 秒或占比不足一半整句丢弃 →
+识别结果太短、只有语气词或常见误识别文字（如“谢谢观看”）时丢弃。参数见配置的 `vad` 和 `voice` 段。
+
+### 长期记忆（`memory`）
+
+后台观察的每条画面记录、提醒、操作员指令都会写入 `data/memory/memory.db`，同时保存一张关键帧到 `data/memory/frames/`；
+每 10 分钟生成一段时段摘要。文字默认保留 30 天，图片保留 7 天，到期自动清理。监控规则和备忘也存在这里，重启后恢复。
+记录的粒度取决于后台观察的间隔（默认几秒一次），一两秒内的短暂动作可能没被记录到。
 提示词集中在 `vva/agent/prompts.py`，可按场景调整；也可在配置中填写 `agent.scene_hint` 描述场景。
 
 ## 常见问题
 
 - **系统自己听到自己说话**：电脑外放时扬声器的声音会进入麦克风。默认 `voice.mute_mic_while_speaking: true`（播放时不收音），代价是不能“说话即打断”。戴耳机或使用带回声消除的会议麦克风时，改为 `false` 即可边说边打断。网页上的“打断”按钮任何时候都可用。
-- **环境吵、误触发**：调高 `vad.threshold_db`（如 -38），或安装 `webrtcvad-wheels`，或设置唤醒词 `voice.wake_words`。
+- **环境吵、误触发**：确认已安装 `webrtcvad-wheels`（日志里有“VAD 使用 webrtcvad”）；调高 `vad.threshold_db`（如 -35）或 `vad.start_frames`；或改用 `voice.mode: wake_word` / `push_to_talk`。
+- **正常说话却没反应**：调低 `vad.min_band_ratio`（如 0.5）或 `vad.threshold_db`（如 -45）；日志里的“忽略识别结果”会写明丢弃原因。
+- **回答还是太长 / 太短**：调整 `agent.max_answer_chars`；需要过渡语可设 `agent.filler_text: "稍等。"`。
 - **读数不准**：在 `agent.scene_hint` 中说明表的量程和单位；适当提高摄像头分辨率；必要时调大 `agent.crop_min_side`。
 - **调用量太大**：调大 `observer.interval` 和 `observer.change_threshold`，或设 `observer.enabled: false` 关闭后台观察（关闭后不能回答时间线类问题，也不能主动提醒）。
 - **监控规则的局限**：规则基于单帧画面 + 上一次的描述来判断，“持续超过 5 分钟”这类时长条件需要扩展 `perception/observer.py` 中的状态逻辑。
@@ -149,4 +183,5 @@ video:
 pip install pytest
 python -m pytest -q tests
 ```
-测试使用假模型，不需要摄像头、麦克风和模型服务，覆盖帧缓存、VAD、句子切分、智能体工具循环、后台观察与告警、语音会话（唤醒词、打断）和整体编排。
+测试使用假模型，不需要摄像头、麦克风和模型服务，覆盖帧缓存、VAD（含敲键盘噪声）、句子切分与回答限长、智能体工具循环、
+后台观察与告警、语音会话（唤醒词、打断、按住说话、识别结果过滤）、长期记忆（记录、按时间查询、回看、摘要、清理、规则恢复）和整体编排。

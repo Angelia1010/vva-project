@@ -1,7 +1,8 @@
 """进程内的异步事件总线。
 
 各模块之间不直接互相调用界面或输出，只通过“主题 + 字典”的事件通信，
-例如 "ui"（推给前端的所有事件）、"alert"（监控规则触发）。
+例如 "ui"（推给前端的所有事件）、"alert"（监控规则触发）、
+"observation"（后台观察的每条画面记录及其图片，供长期记忆保存）。
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ log = logging.getLogger(__name__)
 
 TOPIC_UI = "ui"
 TOPIC_ALERT = "alert"
+TOPIC_OBSERVATION = "observation"
 
 
 class EventBus:

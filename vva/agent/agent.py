@@ -10,7 +10,7 @@ import inspect
 import json
 import logging
 import time
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 from vva.agent import prompts
 
@@ -24,21 +24,38 @@ async def _maybe_await(v: Any) -> None:
         await v
 
 
+_WEEKDAYS = "一二三四五六日"
+
+
+def now_text() -> str:
+    """带星期的当前时间，便于模型换算“今天上午”“昨天下午”等口语时间。"""
+    t = time.localtime()
+    return time.strftime("%Y-%m-%d %H:%M:%S", t) + f" 星期{_WEEKDAYS[t.tm_wday]}"
+
+
 class Agent:
     def __init__(self, llm: Any, tools: Any, max_history_turns: int = 8, max_tool_rounds: int = 6,
-                 filler_text: str = "我看一下。", scene_hint: str = "", **_: Any) -> None:
+                 filler_text: str = "", scene_hint: str = "", max_answer_chars: int = 60,
+                 notes_provider: Callable[[], list[str]] | None = None, **_: Any) -> None:
+        """notes_provider：返回操作员交代过的固定信息（如长期记忆中的备忘），会写进系统提示词。"""
         self.llm = llm
         self.tools = tools
         self.max_history_turns = int(max_history_turns)
         self.max_tool_rounds = int(max_tool_rounds)
         self.filler_text = filler_text
         self.scene_hint = scene_hint
+        self.max_answer_chars = int(max_answer_chars)
+        self.notes_provider = notes_provider
         self.history: list[dict[str, Any]] = []
 
     def _system(self) -> dict[str, Any]:
         hint = f"\n## 场景说明\n{self.scene_hint}" if self.scene_hint else ""
+        notes = self.notes_provider() if self.notes_provider else []
+        notes_block = prompts.NOTES_BLOCK.format(notes="\n".join(f"- {n}" for n in notes)) if notes else ""
+        # 提示词里给模型的字数目标比硬上限紧一半，硬上限只做兜底
         return {"role": "system", "content": prompts.AGENT_SYSTEM.format(
-            now=time.strftime("%Y-%m-%d %H:%M:%S"), scene_hint=hint)}
+            now=now_text(), max_chars=max(10, self.max_answer_chars // 2),
+            notes=notes_block, scene_hint=hint)}
 
     def _trim_history(self) -> None:
         """只保留最近 N 轮；按用户消息切分，避免工具消息失去对应的调用。"""

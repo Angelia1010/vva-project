@@ -44,17 +44,25 @@ audio:
     device: null
 
 vad:
-  threshold_db: -45     # 环境较吵可调高到 -38 左右
+  threshold_db: -40     # 低于该音量不算人声；环境较吵可调高到 -35 左右
+  start_frames: 8       # 连续多少帧（每帧 30ms）人声才算开始说话，挡住敲键盘等短促声音
+  min_utterance_ms: 500 # 一句话里人声至少多长
+  min_voiced_ratio: 0.5 # 一句话里人声帧至少占多少
+  min_band_ratio: 0.6   # 人声频带能量占比下限（0 表示不检查）；误把说话当噪声时调低到 0.5
   end_silence_ms: 700   # 停顿多久算说完
   max_utterance_s: 15
+  # 安装 webrtcvad-wheels 后会自动启用，抗噪更好；webrtc_mode 0~3，越大越严格
 
 voice:
+  # 收音模式：always 一直在听 | wake_word 要说唤醒词 | push_to_talk 按住说话（网页按钮或空格键）
+  mode: always
   # 用电脑外放测试时，扬声器的声音会被麦克风收进去，建议保持 true（播放时不收音）。
   # 戴耳机或使用带回声消除的设备时可设为 false，此时支持“说话即打断”。
   mute_mic_while_speaking: true
   barge_in: true
-  wake_words: []        # 例如 ["小智"]；为空则不需要唤醒词
+  wake_words: []        # mode=wake_word 时使用，例如 ["小监"]
   wake_timeout: 30      # 唤醒后多少秒内不用再说唤醒词
+  min_chars: 2          # 识别结果少于几个字就丢弃（语气词、“谢谢观看”等常见误识别也会丢弃）
 
 # ---------------------------------------------------------------- 模型（OpenAI 兼容接口）
 # asr / tts / agent_llm 未填写 base_url、api_key 时自动沿用 vlm 的配置；
@@ -93,7 +101,8 @@ models:
 # ---------------------------------------------------------------- 智能体与后台观察
 agent:
   scene_hint: ""        # 场景说明，例如“这是实验室，桌上的笔记本电脑屏幕显示一块百分表”
-  filler_text: "我看一下。"
+  filler_text: ""       # 调工具前先播报的过渡语，如“稍等。”；空表示不播报
+  max_answer_chars: 60  # 回答长度上限（字），超出后在句末截断
   max_tool_rounds: 6
   max_history_turns: 8
 
@@ -103,6 +112,16 @@ observer:
   change_threshold: 6   # 画面变化超过该值才调用大模型（0~255 的平均灰度差）
   max_idle: 30          # 画面不变时，最长多久强制记录一次
   rule_check_interval: 8  # 有监控规则时，最长多久判断一次
+
+# ---------------------------------------------------------------- 长期记忆
+# 画面记录、提醒、指令、备忘、监控规则保存在 SQLite（dir/memory.db），关键帧保存在 dir/frames/
+memory:
+  enabled: true
+  dir: data/memory
+  retention_days: 30          # 文字记录保留天数
+  save_keyframes: true        # 保存关键帧，供 look_at_time 回看当时的画面
+  keyframe_retention_days: 7
+  summary_minutes: 10         # 每 10 分钟生成一段摘要；0 表示不生成
 
 web:
   host: 0.0.0.0

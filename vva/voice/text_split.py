@@ -85,3 +85,34 @@ class SentenceSplitter:
         sent = clean_for_tts(self._buf)
         self._buf = ""
         return [sent] if sent and any(ch.isalnum() for ch in sent) else []
+
+
+class AnswerLimiter:
+    """回答长度兜底：累计超过 max_chars 后，只放行到下一个句末标点为止，之后的内容丢弃。
+
+    超出 max_chars 的 1.5 倍仍没有句末标点时直接截断，并补一个句号。max_chars<=0 表示不限制。
+    """
+
+    def __init__(self, max_chars: int = 60) -> None:
+        self.max_chars = int(max_chars)
+        self._count = 0
+        self.closed = False
+
+    def feed(self, delta: str) -> str:
+        if self.max_chars <= 0:
+            return delta
+        if self.closed:
+            return ""
+        out = []
+        hard = int(self.max_chars * 1.5)
+        for ch in delta:
+            out.append(ch)
+            self._count += 1
+            if self._count >= self.max_chars and ch in _SENT_END:
+                self.closed = True
+                break
+            if self._count >= hard:
+                out.append("。")
+                self.closed = True
+                break
+        return "".join(out)

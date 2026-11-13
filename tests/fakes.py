@@ -70,3 +70,23 @@ def speech_pcm(seconds: float, sr: int = 16000, amp: int = 8000) -> bytes:
 
 def silence_pcm(seconds: float, sr: int = 16000) -> bytes:
     return (np.random.default_rng(0).normal(0, 20, int(seconds * sr))).astype(np.int16).tobytes()
+
+
+def voice_pcm(seconds: float, sr: int = 16000, f0: float = 150.0, amp: int = 9000) -> bytes:
+    """带谐波的类人声信号（基频 f0，能量集中在 4kHz 以下）。"""
+    t = np.arange(int(seconds * sr)) / sr
+    x = sum((1.0 / k) * np.sin(2 * np.pi * f0 * k * t) for k in range(1, 15))
+    return (x / np.abs(x).max() * amp).astype(np.int16).tobytes()
+
+
+def typing_pcm(seconds: float, sr: int = 16000, keys_per_s: float = 10, seed: int = 1) -> bytes:
+    """模拟敲键盘：一连串短促（约 40ms、快速衰减）的宽频脉冲。"""
+    rng = np.random.default_rng(seed)
+    x = rng.normal(0, 30, int(seconds * sr))
+    n = int(0.04 * sr)
+    env = np.exp(-np.arange(n) / (0.006 * sr))
+    for k in range(int(seconds * keys_per_s)):
+        st = int(k * sr / keys_per_s) + int(rng.integers(0, 500))
+        seg = x[st:st + n]
+        seg += rng.normal(0, 9000, n)[:len(seg)] * env[:len(seg)]
+    return np.clip(x, -32767, 32767).astype(np.int16).tobytes()

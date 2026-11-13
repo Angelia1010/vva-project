@@ -28,18 +28,20 @@ DEFAULTS: dict[str, Any] = {
     "vad": {
         "engine": "auto",            # auto | energy | webrtc
         "frame_ms": 30,
-        "threshold_db": -45.0,
-        "margin_db": 12.0,
-        "start_frames": 3,
+        "threshold_db": -40.0,       # 低于该音量不算人声
+        "margin_db": 12.0,           # 需高出环境噪声底多少 dB
+        "start_frames": 8,           # 连续多少帧人声才算开始说话（8×30ms=240ms），挡住敲键盘等短促声音
         "end_silence_ms": 700,
         "pre_roll_ms": 300,
-        "min_utterance_ms": 300,
+        "min_utterance_ms": 500,     # 一句话里人声至少多长
+        "min_voiced_ratio": 0.5,     # 一句话里人声帧至少占多少
+        "min_band_ratio": 0.6,       # 人声频带（80~4000Hz）能量占比下限，0 表示不检查
         "max_utterance_s": 15.0,
-        "webrtc_mode": 2,
+        "webrtc_mode": 3,            # webrtcvad 灵敏度 0~3，越大越严格
     },
     "models": {
         "agent_llm": {"base_url": "", "api_key": "", "model": "", "temperature": 0.3,
-                      "stream": True, "timeout": 60, "extra_body": None},
+                      "stream": True, "timeout": 60, "max_tokens": 400, "extra_body": None},
         "vlm": {"base_url": "", "api_key": "", "model": "", "temperature": 0.1,
                 "timeout": 60, "max_image_side": 1280, "bbox_format": "0-1000",
                 "json_mode": False, "max_tokens": 1024, "extra_body": None},
@@ -63,17 +65,37 @@ DEFAULTS: dict[str, Any] = {
     "agent": {
         "max_history_turns": 8,
         "max_tool_rounds": 6,
-        "filler_text": "我看一下。",
+        "filler_text": "",           # 调工具前先播报的话（如“稍等。”）；空字符串表示不播报
         "scene_hint": "",
         "look_max_side": 1280,
         "crop_min_side": 768,
+        "max_answer_chars": 60,      # 回答长度硬上限（字），超出后在句末截断；提示词目标为它的一半
+        "look_max_tokens": 256,      # 看图模型单次回答的 token 上限
     },
     "voice": {
+        "mode": "always",            # always | wake_word | push_to_talk
         "barge_in": True,
         "mute_mic_while_speaking": True,
         "mute_tail_ms": 400,
-        "wake_words": [],
-        "wake_timeout": 30.0,
+        "wake_words": [],            # mode=wake_word 时使用，如 ["小监"]
+        "wake_timeout": 30.0,        # 唤醒后多少秒内的后续指令不必再说唤醒词
+        "min_chars": 2,              # 识别结果少于几个字就丢弃
+        "ignore_phrases": None,      # 要丢弃的识别结果（语气词、常见误识别）；None 用内置列表
+        "ptt_min_ms": 300,           # 按住说话时，短于该时长的按下视为误触
+    },
+    "memory": {
+        "enabled": True,
+        "dir": "data/memory",        # 数据库和关键帧图片的目录（相对于启动目录）
+        "retention_days": 30,        # 文字记录保留天数
+        "save_keyframes": True,      # 是否保存关键帧图片，供回看当时的画面
+        "keyframe_retention_days": 7,
+        "keyframe_side": 640,
+        "keyframe_quality": 80,
+        "summary_minutes": 10,       # 每多少分钟生成一段摘要；0 表示不生成
+        "summary_catchup_hours": 24, # 重启后补做最近多少小时内缺失的摘要
+        "look_max_gap_s": 300,       # look_at_time 找不到正好那一刻的画面时，前后最多放宽多少秒
+        "max_events": 40,            # search_memory 一次最多返回多少条记录
+        "max_notes": 50,
     },
     "web": {"host": "0.0.0.0", "port": 8000, "mjpeg_fps": 10, "ingest_token": "",
             "ssl_certfile": "", "ssl_keyfile": ""},

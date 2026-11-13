@@ -4,7 +4,7 @@ uvicorn[standard]>=0.29
 opencv-python-headless>=4.8   # 服务器无图形界面，用 headless 版，免装 libGL
 numpy>=1.24
 pyyaml>=6.0
+webrtcvad-wheels>=2.0.10   # 人声检测，挡住敲键盘等噪声；装不上时自动退回能量+频谱检测
 # 以下按需安装：
 # sounddevice>=0.4.6  # 仅在服务器本机接麦克风/扬声器时需要（需 apt install libportaudio2）；浏览器测试模式不需要
-# webrtcvad-wheels    # 更抗噪的 VAD，安装后自动启用
 # pytest              # 运行 tests/

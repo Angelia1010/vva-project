@@ -45,6 +45,8 @@ class ChatModel:
         """产出 ("text", 增量文本)；若模型要调用工具，最后产出 ("tool_calls", [{id,name,arguments}])。"""
         kwargs: dict[str, Any] = dict(model=self.model, messages=messages,
                                       temperature=self.cfg.get("temperature", 0.3), **_extra(self.cfg))
+        if self.cfg.get("max_tokens"):
+            kwargs["max_tokens"] = int(self.cfg["max_tokens"])
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
