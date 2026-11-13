@@ -30,14 +30,16 @@ DEFAULTS: dict[str, Any] = {
         "frame_ms": 30,
         "threshold_db": -40.0,       # 低于该音量不算人声
         "margin_db": 12.0,           # 需高出环境噪声底多少 dB
-        "start_frames": 8,           # 连续多少帧人声才算开始说话（8×30ms=240ms），挡住敲键盘等短促声音
+        "start_frames": 6,           # 最近 start_window_ms 内至少多少帧人声才算开始说话，挡住敲键盘等短促声音
+        "start_window_ms": 300,
         "end_silence_ms": 700,
         "pre_roll_ms": 300,
         "min_utterance_ms": 500,     # 一句话里人声至少多长
         "min_voiced_ratio": 0.5,     # 一句话里人声帧至少占多少
         "min_band_ratio": 0.6,       # 人声频带（80~4000Hz）能量占比下限，0 表示不检查
         "max_utterance_s": 15.0,
-        "webrtc_mode": 3,            # webrtcvad 灵敏度 0~3，越大越严格
+        "webrtc_mode": 2,            # webrtcvad 严格程度 0~3，越大越容易把声音判为非人声
+        "debug": False,              # true：每 2 秒在日志里打印音量和各项检查的通过情况，用于调参
     },
     "models": {
         "agent_llm": {"base_url": "", "api_key": "", "model": "", "temperature": 0.3,

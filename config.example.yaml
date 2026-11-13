@@ -45,13 +45,14 @@ audio:
 
 vad:
   threshold_db: -40     # 低于该音量不算人声；环境较吵可调高到 -35 左右
-  start_frames: 8       # 连续多少帧（每帧 30ms）人声才算开始说话，挡住敲键盘等短促声音
+  start_frames: 6       # 最近 300ms（10 帧）内至少几帧是人声才算开始说话，挡住敲键盘等短促声音
   min_utterance_ms: 500 # 一句话里人声至少多长
   min_voiced_ratio: 0.5 # 一句话里人声帧至少占多少
   min_band_ratio: 0.6   # 人声频带能量占比下限（0 表示不检查）；误把说话当噪声时调低到 0.5
   end_silence_ms: 700   # 停顿多久算说完
   max_utterance_s: 15
-  # 安装 webrtcvad-wheels 后会自动启用，抗噪更好；webrtc_mode 0~3，越大越严格
+  webrtc_mode: 2        # 装了 webrtcvad-wheels 时生效，0~3，越大越严格
+  debug: false          # true：日志里每 2 秒打印音量和检查结果，说话没反应时用来排查
 
 voice:
   # 收音模式：always 一直在听 | wake_word 要说唤醒词 | push_to_talk 按住说话（网页按钮或空格键）

@@ -90,3 +90,12 @@ def typing_pcm(seconds: float, sr: int = 16000, keys_per_s: float = 10, seed: in
         seg = x[st:st + n]
         seg += rng.normal(0, 9000, n)[:len(seg)] * env[:len(seg)]
     return np.clip(x, -32767, 32767).astype(np.int16).tobytes()
+
+
+def syllables_pcm(n: int, sr: int = 16000, syl_ms: int = 150, gap_ms: int = 60) -> bytes:
+    """模拟正常说话：一个个音节之间有短暂的弱音（更接近真实语音的断续）。"""
+    gap = (np.random.default_rng(2).normal(0, 30, int(gap_ms / 1000 * sr))).astype(np.int16).tobytes()
+    out = b""
+    for i in range(n):
+        out += voice_pcm(syl_ms / 1000, sr, f0=140 + 15 * (i % 4)) + gap
+    return out

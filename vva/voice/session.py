@@ -55,6 +55,7 @@ class VoiceSession:
         self._gen = 0
         self._synth_busy = False
         self._last_speaking = 0.0
+        self._muted_logged = False
         self._tasks: list[asyncio.Task] = []
 
     def _resolve_mode(self, mode: str) -> str:
@@ -149,8 +150,13 @@ class VoiceSession:
             return False
         if self.speaking:
             self._last_speaking = time.time()
-            return True
-        return time.time() - self._last_speaking < self.mute_tail
+            muted = True
+        else:
+            muted = time.time() - self._last_speaking < self.mute_tail
+        if muted != self._muted_logged:
+            self._muted_logged = muted
+            log.info("播报中，暂停收音" if muted else "播报结束，恢复收音")
+        return muted
 
     async def _listen_loop(self) -> None:
         while True:

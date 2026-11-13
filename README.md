@@ -157,7 +157,7 @@ video:
 | `wake_word` | 句子里要带唤醒词（`voice.wake_words`）才响应；唤醒后 `wake_timeout` 秒内不用再说 |
 | `push_to_talk` | 按住网页上的“按住说话”按钮或空格键说话，松开后识别，最不容易误触发 |
 
-防误触发分三层：人声检测（webrtcvad + 频谱 + 音量）→ 连续 240ms 人声才算开始、人声不足 0.5 秒或占比不足一半整句丢弃 →
+防误触发分三层：人声检测（webrtcvad + 频谱 + 音量）→ 300ms 内至少 6 帧人声才算开始、人声不足 0.5 秒或占比不足一半整句丢弃 →
 识别结果太短、只有语气词或常见误识别文字（如“谢谢观看”）时丢弃。参数见配置的 `vad` 和 `voice` 段。
 
 ### 长期记忆（`memory`）
@@ -171,7 +171,7 @@ video:
 
 - **系统自己听到自己说话**：电脑外放时扬声器的声音会进入麦克风。默认 `voice.mute_mic_while_speaking: true`（播放时不收音），代价是不能“说话即打断”。戴耳机或使用带回声消除的会议麦克风时，改为 `false` 即可边说边打断。网页上的“打断”按钮任何时候都可用。
 - **环境吵、误触发**：确认已安装 `webrtcvad-wheels`（日志里有“VAD 使用 webrtcvad”）；调高 `vad.threshold_db`（如 -35）或 `vad.start_frames`；或改用 `voice.mode: wake_word` / `push_to_talk`。
-- **正常说话却没反应**：调低 `vad.min_band_ratio`（如 0.5）或 `vad.threshold_db`（如 -45）；日志里的“忽略识别结果”会写明丢弃原因。
+- **正常说话却没反应**：设 `vad.debug: true` 重启，日志里每 2 秒会打印音量和各项检查的通过帧数，据此调低 `vad.threshold_db`（如 -45）、`vad.min_band_ratio`（如 0.5）或 `vad.webrtc_mode`（如 1）；“丢弃一段声音”“忽略识别结果”会写明丢弃原因。
 - **回答还是太长 / 太短**：调整 `agent.max_answer_chars`；需要过渡语可设 `agent.filler_text: "稍等。"`。
 - **读数不准**：在 `agent.scene_hint` 中说明表的量程和单位；适当提高摄像头分辨率；必要时调大 `agent.crop_min_side`。
 - **调用量太大**：调大 `observer.interval` 和 `observer.change_threshold`，或设 `observer.enabled: false` 关闭后台观察（关闭后不能回答时间线类问题，也不能主动提醒）。

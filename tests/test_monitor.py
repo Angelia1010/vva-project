@@ -14,8 +14,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from tests.fakes import (FakeASR, FakeLLM, FakeTTS, FakeVLM, silence_pcm, typing_pcm,  # noqa: E402
-                         voice_pcm)
+from tests.fakes import (FakeASR, FakeLLM, FakeTTS, FakeVLM, silence_pcm, syllables_pcm,  # noqa: E402
+                         typing_pcm, voice_pcm)
 from vva.agent.agent import Agent  # noqa: E402
 from vva.agent.toolkit import ToolSet  # noqa: E402
 from vva.audio.push import CallbackAudioOutput, PushAudioInput  # noqa: E402
@@ -53,10 +53,13 @@ def _jpeg(v: int = 120) -> bytes:
 def test_vad_ignores_typing_but_hears_voice():
     assert speech_band_ratio(voice_pcm(0.03), 16000) > 0.9
     assert _vad_events(silence_pcm(1) + voice_pcm(1.2) + silence_pcm(1.2)) == ["start", "end"]
-    for keys in (8, 14):
+    # 正常说话字与字之间有弱音，不能要求每帧都连续通过
+    assert _vad_events(silence_pcm(1) + syllables_pcm(8) + silence_pcm(1.2)) == ["start", "end"]
+    for keys in (8, 14, 20):
         assert _vad_events(silence_pcm(1) + typing_pcm(5, keys_per_s=keys) + silence_pcm(1.2)) == []
     # 对照：旧参数会把敲键盘当成说话
-    old = dict(threshold_db=-45, start_frames=3, min_utterance_ms=300, min_voiced_ratio=0, min_band_ratio=0)
+    old = dict(threshold_db=-45, start_frames=3, start_window_ms=90, min_utterance_ms=300, min_voiced_ratio=0,
+               min_band_ratio=0)
     assert "end" in _vad_events(silence_pcm(1) + typing_pcm(5, keys_per_s=14, seed=3) + silence_pcm(1.2), **old)
 
 
