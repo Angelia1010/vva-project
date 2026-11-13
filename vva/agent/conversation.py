@@ -32,6 +32,12 @@ class Conversation:
         self.messages.append({"role": "assistant", "content": text})
         self.updated = time.time()
 
+    def replace_note(self, prefix: str, text: str) -> None:
+        """更新一条系统主动告知的信息（如职责清单变化）：先删掉之前同类的，再追加最新的，避免旧信息误导模型。"""
+        self.messages = [m for m in self.messages
+                         if not (m["role"] == "assistant" and str(m.get("content") or "").startswith(prefix))]
+        self.add_note(prefix + text)
+
     def reset(self) -> None:
         self.messages.clear()
 
@@ -58,6 +64,9 @@ class ConversationStore:
 
     def peek(self, session_id: str) -> Conversation | None:
         return self._items.get(session_id)
+
+    def all(self) -> list[Conversation]:
+        return list(self._items.values())
 
     def _expire(self) -> None:
         now = time.time()

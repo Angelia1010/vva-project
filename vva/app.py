@@ -156,6 +156,15 @@ class App:
         self.channels = ChannelManager(cfg.get("channels") or {}, self, cfg.get("channels_settings_dir") or "data/channels")
         self.duties.target_options = self.notify_targets
         self.duties.target_problem = self.target_problem
+        self.rules.on_change(lambda _: self._announce_duties())
+
+    DUTY_NOTE = "【职责清单已更新】"
+
+    def _announce_duties(self) -> None:
+        """职责增删改后，告诉每个会话最新的清单，避免模型沿用对话里旧的数量。"""
+        text = f"现在{self.duties.summary()}。"
+        for conv in self.conversations.all():
+            conv.replace_note(self.DUTY_NOTE, text)
 
     # ---------------------------------------------------------------- 岗位、场景、通知对象
     def scene_text(self) -> str:

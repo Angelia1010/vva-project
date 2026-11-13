@@ -280,3 +280,17 @@ def test_duty_web_api(tmp_path):
     assert c.put("/api/station", headers=h, json={"name": "1 号仓库门口", "paused": True}).json()["paused"] is True
     assert app.rules.paused and c.delete("/api/duties/d1", headers=h).json()["ok"]
     assert c.get("/duties").status_code == 200 and c.get("/alerts").status_code == 200
+
+
+def test_duty_changes_refresh_agent_context(tmp_path):
+    from tests.test_channels import _app
+    app = _app(tmp_path, FakeLLM([]))
+    ids = [app.duties.book.create(name=f"职责{i}", condition=f"条件{i}").id for i in range(6)]
+    conv = app.conversations.get("web")
+    conv.extend([{"role": "user", "content": "你负责什么"}, {"role": "assistant", "content": "我负责 6 项。"}])
+    app.duties.book.remove(ids[0])
+    app.duties.book.remove(ids[1])
+    notes = [m["content"] for m in conv.messages if m["content"].startswith(app.DUTY_NOTE)]
+    assert notes == [f"{app.DUTY_NOTE}现在长期职责 4 项：职责2、职责3、职责4、职责5；没有临时任务。"]   # 只保留最新一条
+    system = app.agent._system()["content"]
+    assert "长期职责 4 项" in system and "职责0" not in system and "以这里为准" in system

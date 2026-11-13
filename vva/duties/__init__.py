@@ -111,16 +111,29 @@ class DutyManager:
                         "target_text": self.target_labels(d.effective_targets())})
         return out
 
+    def summary(self) -> str:
+        """一句话概括当前职责，如“长期职责 4 项：禁止吸烟、离岗提醒、……；临时任务 1 个：快递提醒”。"""
+        items = self.status_list()
+        long = [d["name"] for d in items if not d["temporary"]]
+        temp = [d["name"] for d in items if d["temporary"]]
+        text = f"长期职责 {len(long)} 项" + (f"：{'、'.join(long)}" if long else "")
+        return text + (f"；临时任务 {len(temp)} 个：{'、'.join(temp)}" if temp else "；没有临时任务")
+
     def prompt_block(self) -> str:
         items = self.status_list()
         if not items:
-            return "\n## 你的职责\n目前没有配置职责。被问到时如实说明，并提示可以在值守台“添加职责”。\n"
+            return "\n## 你的职责（实时）\n目前没有配置任何职责。被问到时如实说明，并提示可以在值守台“添加职责”。\n"
+        long = [d for d in items if not d["temporary"]]
+        temp = [d for d in items if d["temporary"]]
         lines = []
-        for d in items:
-            tag = f"临时任务，{d['expires_text']} 到期" if d["temporary"] else d["kind_label"]
-            lines.append(f"- {d['id']} {d['name']}（{tag}；{d['schedule']}；通知{d['target_text']}；{d['state_text']}；"
-                         f"今天 {d['today_count']} 次）")
-        return ("\n## 你的职责（被问“你负责什么”时按这里回答，先说数量再列名称）\n" + "\n".join(lines) + "\n")
+        for d in long:
+            lines.append(f"- {d['id']} {d['name']}（{d['kind_label']}；{d['schedule']}；通知{d['target_text']}；"
+                         f"{d['state_text']}；今天 {d['today_count']} 次）")
+        for d in temp:
+            lines.append(f"- {d['id']} {d['name']}（临时任务，{d['expires_text']} 到期；通知{d['target_text']}；"
+                         f"{d['state_text']}）")
+        return (f"\n## 你的职责（实时：长期职责 {len(long)} 项，临时任务 {len(temp)} 个。"
+                "职责随时会被增删，之前对话里说过的数量和名称作废，一律以这里为准）\n" + "\n".join(lines) + "\n")
 
     # ---------------------------------------------------------------- 管理
     async def parse(self, text: str, objects: list[str]) -> dict[str, Any]:
