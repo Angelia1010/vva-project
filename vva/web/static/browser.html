@@ -441,13 +441,10 @@ $("sel-cam").onchange = () => camStream && startCamera();
 $("sel-fps").onchange = restartUpload;
 
 // ============================================================ 麦克风：采集 → 16k PCM16 → WebSocket；接收语音并播放
-let micStream = null, micCtx = null, micNode = null, audioWs = null;
+let micStream = null, micCtx = null, micNode = null, micSink = null, audioWs = null;
 let inRate = 16000, outRate = 24000, resampleBuf = [], resamplePos = 0, sendBuf = [];
 let playCtx = null, playTime = 0, playing = new Set();
 
-const WORKLET = `class Cap extends AudioWorkletProcessor {
-  process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; }
-} registerProcessor("cap", Cap);`;
 
 function ensurePlayer() {
   if (!playCtx) playCtx = new AudioContext();
@@ -531,13 +528,10 @@ async function startMic() {
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
   micCtx = new AudioContext();
-  await micCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], {type: "application/javascript"})));
   const src = micCtx.createMediaStreamSource(micStream);
-  micNode = new AudioWorkletNode(micCtx, "cap");
   resampleBuf = []; resamplePos = 0; sendBuf = [];
   const chunk = Math.round(inRate * 0.04);   // 每 40ms 发送一包
-  micNode.port.onmessage = (e) => {
-    const data = e.data;
+  const onData = (data) => {
     let sum = 0; for (const v of data) sum += v * v;
     $("meter").style.width = Math.min(100, Math.sqrt(sum / data.length) * 400) + "%";
     for (const v of resampleTo(data, micCtx.sampleRate, inRate)) sendBuf.push(v);
@@ -547,15 +541,29 @@ async function startMic() {
       if (audioWs && audioWs.readyState === 1) audioWs.send(pcm.buffer);
     }
   };
-  src.connect(micNode);   // 不连接到扬声器，避免回放自己的声音
+  try {
+    // 首选 AudioWorklet（独立线程采集，不卡页面）；脚本放在静态文件里，避免部分浏览器拒绝从 blob 地址加载
+    await micCtx.audioWorklet.addModule("/static/mic-worklet.js");
+    micNode = new AudioWorkletNode(micCtx, "cap");
+    micNode.port.onmessage = (e) => onData(e.data);
+    src.connect(micNode);   // 不连接到扬声器，避免回放自己的声音
+  } catch (e) {
+    // 退回 ScriptProcessor（旧接口，所有浏览器都支持）；必须接到输出才会工作，用静音节点接上
+    console.warn("AudioWorklet 不可用，改用 ScriptProcessor：", e);
+    micNode = micCtx.createScriptProcessor(2048, 1, 1);
+    micNode.onaudioprocess = (ev) => onData(new Float32Array(ev.inputBuffer.getChannelData(0)));
+    micSink = micCtx.createGain(); micSink.gain.value = 0;
+    src.connect(micNode); micNode.connect(micSink); micSink.connect(micCtx.destination);
+  }
   $("btn-mic").textContent = "关闭麦克风"; $("btn-mic").className = "active";
   pill("pill-mic", "麦克风已开启", "on");
 }
 function stopMic() {
   if (micNode) micNode.disconnect();
+  if (micSink) micSink.disconnect();
   if (micCtx) micCtx.close();
   if (micStream) micStream.getTracks().forEach(t => t.stop());
-  micNode = micCtx = micStream = null;
+  micNode = micSink = micCtx = micStream = null;
   $("meter").style.width = "0";
   $("btn-mic").textContent = "开启麦克风"; $("btn-mic").className = "primary";
   // 不关闭语音通道：关掉麦克风后打字提问仍能听到回答
