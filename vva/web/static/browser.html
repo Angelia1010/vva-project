@@ -307,11 +307,12 @@ function renderDuties(list) {
     toggle: async (d) => { try { await vva.api("PUT", "/api/duties/" + d.id, { enabled: !d.enabled }); loadOverview(); } catch (e) { notice(e.message); } },
     edit: (d) => DutyEditor.open(d.temporary ? { ...d, temporary: false, expires: 0, source: "web" } : d, { onSaved: loadOverview }),
     alerts: (d) => { location.href = "/alerts?duty=" + encodeURIComponent(d.id); },
+    remove: async (d) => { try { if (await removeDuty(d)) loadOverview(); } catch (e) { notice("删除失败：" + e.message); } },
   };
   for (const d of long) box.appendChild(dutyCard(d, actions));
   $("temps-wrap").style.display = temps.length ? "flex" : "none";
   const tbox = $("temps"); tbox.innerHTML = "";
-  for (const d of temps) tbox.appendChild(dutyCard(d, { toggle: actions.toggle, edit: actions.edit }));
+  for (const d of temps) tbox.appendChild(dutyCard(d, { toggle: actions.toggle, edit: actions.edit, remove: actions.remove }));
 }
 async function testDuty(d, btn) {
   btn.disabled = true; btn.textContent = "检查中…";

@@ -116,6 +116,7 @@ function render() {
     toggle: async (d) => { try { await vva.api("PUT", "/api/duties/" + d.id, { enabled: !d.enabled }); load(); } catch (e) { msg(e.message, "err"); } },
     edit: (d) => DutyEditor.open(d.temporary ? { ...d, temporary: false, expires: 0 } : d, { onSaved: () => { msg("已保存", "ok"); load(); } }),
     alerts: (d) => { location.href = "/alerts?duty=" + encodeURIComponent(d.id); },
+    remove: async (d) => { try { if (await removeDuty(d)) { msg("已删除", "ok"); load(); } } catch (e) { msg("删除失败：" + e.message, "err"); } },
   };
   for (const d of list) box.appendChild(dutyCard(d, actions, { open: true }));
 }

@@ -75,3 +75,10 @@
 @media (max-width: 560px) {
   .drawer .row2, .drawer .box { grid-template-columns: 1fr; }
 }
+
+/* 职责卡可以展开：右上角的小箭头提示“点开有操作” */
+.dcard summary { position: relative; padding-right: 18px; }
+.dcard summary::after { content: ""; position: absolute; right: 2px; top: 6px; width: 7px; height: 7px;
+  border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); transition: transform .15s; }
+.dcard[open] summary::after { transform: rotate(-135deg); top: 10px; }
+.dcard summary:hover .name { color: #fff; }

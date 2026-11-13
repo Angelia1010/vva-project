@@ -264,7 +264,15 @@
   window.DutyEditor = { open, openTemplates, close };
 })();
 
-// 职责卡（值守台左栏、职责页共用）。actions：{ test, toggle, edit } 回调
+// 职责卡（值守台左栏、职责页共用）。actions：{ test, toggle, edit, alerts, remove } 回调
+
+// 删除职责（带确认），成功返回 true
+window.removeDuty = async function (d) {
+  const tip = d.temporary ? `取消临时任务“${d.name}”？` : `删除职责“${d.name}”？删除后不再值守这一项，已有的告警记录会保留。`;
+  if (!confirm(tip)) return false;
+  await vva.api("DELETE", "/api/duties/" + d.id);
+  return true;
+};
 window.dutyCard = function (d, actions, opts) {
   const esc = vva.esc, o = opts || {};
   const el = document.createElement("details");
@@ -288,5 +296,6 @@ window.dutyCard = function (d, actions, opts) {
   if (actions.toggle) add(d.enabled ? "暂停" : "恢复", actions.toggle);
   if (actions.edit) add(d.temporary ? "转为长期职责" : "编辑", actions.edit);
   if (actions.alerts) add("告警记录", actions.alerts, "ghost");
+  if (actions.remove) add(d.temporary ? "取消任务" : "删除", actions.remove, "danger");
   return el;
 };
