@@ -310,3 +310,68 @@ def test_feishu_api_requests():
         with pytest.raises(FeishuError):
             await api.reply("om_1", "text", {"text": "x"})
     asyncio.run(run())
+
+
+# ---------------------------------------------------------------- 网页配置飞书
+def test_channel_manager_settings_and_hot_apply(tmp_path, monkeypatch):
+    async def run():
+        from vva.channels import ChannelManager
+        built = []
+
+        class Spy(FeishuChannel):
+            def __init__(self, cfg, host):
+                super().__init__(cfg, host, api=FakeAPI(), receiver=FakeReceiver())
+                built.append(self)
+        monkeypatch.setitem(__import__("vva.channels.manager", fromlist=["BUILTIN"]).BUILTIN, "feishu",
+                            "tests.test_channels:_SpyHolder")
+        _SpyHolder.cls = Spy
+        host = FakeHost()
+        host.bus.bind_loop(asyncio.get_running_loop())
+        mgr = ChannelManager({"feishu": {"enabled": False, "app_id": "cli_cfg"}}, host, str(tmp_path / "ch"))
+        await mgr.start()
+        assert mgr.get("feishu") is None
+        # 网页开启：新建并启动，不需要重启
+        assert await mgr.reconfigure("feishu", {"enabled": True, "app_secret": "s1"}) is False
+        ch = mgr.get("feishu")
+        assert ch.started and ch.cfg["app_id"] == "cli_cfg"                     # config.yaml 的值 + 网页保存的值
+        assert oct(os.stat(tmp_path / "ch" / "feishu.yaml").st_mode & 0o777) == "0o600"
+        # 修改推送群：立即生效
+        assert await mgr.reconfigure("feishu", {"alert_chats": ["oc_a"]}) is False
+        assert ch.alert_chats == ["oc_a"] and ch.status()["alert_push"]
+        host.bus.publish(TOPIC_ALERT, {"condition": "没人", "ts": time.time()})
+        await asyncio.sleep(0.05)
+        assert ch.api.sent and ch.api.sent[0][0] == "oc_a"
+        # 修改 App Secret：需要重启
+        assert await mgr.reconfigure("feishu", {"app_secret": "s2"}) is True
+        # 关闭后再开启：旧的长连接无法关闭，需要重启
+        assert await mgr.reconfigure("feishu", {"enabled": False}) is False and mgr.get("feishu") is None
+        assert await mgr.reconfigure("feishu", {"enabled": True}) is True and len(built) == 1
+        # 重新创建（模拟重启服务）时读到网页保存的配置
+        mgr2 = ChannelManager({"feishu": {"enabled": False}}, host, str(tmp_path / "ch"))
+        assert mgr2.config("feishu")["app_secret"] == "s2" and mgr2.config("feishu")["alert_chats"] == ["oc_a"]
+        await mgr.stop()
+    asyncio.run(run())
+
+
+class _SpyHolder:
+    cls = None
+
+    def __new__(cls, cfg, host):
+        return _SpyHolder.cls(cfg, host)
+
+
+def test_feishu_status_tracks_recent_chats_and_ignores_after_stop():
+    async def run():
+        ch, host, api = _channel()
+        await ch.start()
+        await ch.handle_event(_event("几个人", chat_type="group", chat="oc_g", user="ou_x", mentions=[{"key": "@_user_1"}]))
+        st = ch.status()
+        assert st["recent"][0]["chat_id"] == "oc_g" and st["recent"][0]["sender_id"] == "ou_x"
+        await ch.send_test("oc_g")
+        assert api.sent[-1][2]["header"]["title"]["content"] == "监控助手测试消息"
+        await ch.stop()
+        ch._loop = asyncio.get_running_loop()
+        ch._on_event_threadsafe(_event("还在吗", mid="m9"))
+        await asyncio.sleep(0.02)
+        assert len(host.asked) == 1                                    # 停用后收到的消息不再处理
+    asyncio.run(run())

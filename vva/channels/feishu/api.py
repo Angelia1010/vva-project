@@ -55,6 +55,11 @@ class FeishuAPI:
             raise FeishuError(f"{path} 调用失败：{data.get('code')} {data.get('msg')}")
         return data.get("data") or {}
 
+    async def check(self) -> None:
+        """验证 app_id / app_secret 是否正确（获取一次访问凭证），失败时抛出 FeishuError。"""
+        self._token_expire = 0.0
+        await self._tenant_token()
+
     # ---------------------------------------------------------------- 消息
     async def send(self, receive_id: str, msg_type: str, content: dict[str, Any],
                    receive_id_type: str = "chat_id") -> dict[str, Any]:
