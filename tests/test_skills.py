@@ -221,3 +221,28 @@ def test_app_wires_skills(tmp_path):
         assert "出现陌生人" in [r.condition for r in app.rules.list()]
         await app.stop()
     asyncio.run(run())
+
+
+def test_demo_office_scenario(tmp_path):
+    """examples/demo-office 测试场景：技能能加载，专用工具按规定判断，知识库文档能切分出各条规定。"""
+    async def run():
+        import shutil
+        from vva.knowledge.parsing import extract_sections, split_text
+        demo = os.path.join(ROOT, "examples", "demo-office")
+        shutil.copytree(os.path.join(demo, "skills"), tmp_path / "skills")
+        mgr = _mgr(tmp_path)
+        assert [s.name for s in mgr.active()] == ["办公桌巡查", "现场概况-办公桌"]
+        assert "### 现场概况-办公桌" in mgr.prompt_block() and "- 办公桌巡查：" in mgr.prompt_block()
+        mgr.load_plugins(_buf(), FakeVLM(), EventBus())
+        tool = mgr.plugins["办公桌巡查"]
+        r = json.loads(await tool.call("desk_compliance", {"items": ["笔记本电脑", "粉色保温杯", "一包零食"],
+                                                           "cup_next_to_computer": True}))
+        assert not r["compliant"] and len(r["problems"]) == 2
+        r = json.loads(await tool.call("desk_compliance", {"items": ["笔记本电脑", "保温杯"]}))
+        assert r["compliant"]
+        rules = WatchRules()
+        assert mgr.apply_rules(rules) == 1 and rules.list()[0].condition == "画面中没有人坐在工位上"
+        with open(os.path.join(demo, "knowledge", "办公区管理规范.md"), "rb") as f:
+            chunks = split_text(extract_sections("办公区管理规范.md", f.read()))
+        assert [c.position for c in chunks] == ["一、工作时间", "二、工位物品", "三、离岗", "四、工牌", "五、异常处理"]
+    asyncio.run(run())

@@ -1,0 +1,5 @@
+name: 工牌
+aliases: [胸牌, 员工卡]
+description: 请在技能页面改成你们工牌的外观，如“白色卡片，蓝色挂绳”
+normal: 佩戴在胸前
+abnormal: 没有佩戴，或放在桌上
