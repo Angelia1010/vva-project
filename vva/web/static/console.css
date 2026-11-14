@@ -33,7 +33,7 @@ h1, h2, h3 { letter-spacing: .02em; }
 a { color: #7FD8F7; }
 a:hover { color: #B5E9FB; }
 :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sr-only { position: fixed; top: 0; left: 0; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---------------- 值班栏 ---------------- */
 .duty {
@@ -146,8 +146,14 @@ label.field .muted { font-weight: 400; margin-left: 6px; }
   body.app > header.duty { flex: 0 0 auto; }
   body.app > .page { flex: 1 1 auto; min-height: 0; width: 100%; max-width: none; display: flex; flex-direction: column; padding: 16px 24px 16px; }
   body.app .page-head { flex: 0 0 auto; margin-bottom: 14px; }
-  body.app .page > .layout { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+  body.app .page > .layout { flex: 1 1 auto; min-height: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr); }
   body.app .page > .layout.top { align-items: start; }      /* 内容不多的页面（如设置）：面板按内容高度，不拉满 */
+}
+@media (min-width: 1100px) and (min-height: 640px) and (max-height: 780px) {   /* 笔记本屏幕：页头更紧凑 */
+  body.app > .page { padding-top: 10px; }
+  body.app .page-head { margin-bottom: 10px; }
+  body.app .page-head h1 { font-size: 19px; }
+  body.app .page-head p { display: none; }
   body.app .page > .layout > * { min-height: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 }
 *::-webkit-scrollbar { width: 8px; height: 8px; }

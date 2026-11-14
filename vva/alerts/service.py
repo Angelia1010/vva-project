@@ -95,7 +95,7 @@ class AlertService:
         handled = [a for a in week if a.handled_ts and a.status == "resolved"]
         return {
             "today": sum(n for s, n in by.items() if s not in ("record", "trial")),
-            "pending": by.get("pending", 0) + by.get("handling", 0),
+            "pending": len(self.store.query(statuses=OPEN, limit=10000)),      # 所有未处理的，不只今天
             "false_today": by.get("false", 0),
             "trial_today": by.get("trial", 0),
             "false_rate_week": round(sum(a.status == "false" for a in judged) / len(judged), 3) if judged else None,
