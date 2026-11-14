@@ -9,7 +9,7 @@
   .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
 
   /* 左侧：技能列表，像值班表一样一行一个 */
-  .roster { position: sticky; top: 16px; padding: 0; overflow: hidden; }
+  .roster { position: sticky; top: 16px; padding: 0; }
   .roster-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
   .roster-head h2 { margin: 0; font-size: 15px; flex: 1; }
   .roster ul { list-style: none; margin: 0; padding: 0; max-height: calc(100vh - 220px); overflow-y: auto; }
@@ -79,7 +79,7 @@
   }
 </style>
 </head>
-<body>
+<body class="app">
 <header class="duty">
   <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
   <nav aria-label="页面">

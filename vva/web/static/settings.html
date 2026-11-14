@@ -6,9 +6,10 @@
 <title>设置 - AI 值守台</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
-  .layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
-  .form { flex: 999 1 520px; min-width: 0; }
-  .side { flex: 1 1 300px; max-width: 380px; display: flex; flex-direction: column; gap: 16px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 860px) 380px; gap: 20px; align-items: start; }
+  .form { min-width: 0; }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
   .link { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid #1E3150; text-decoration: none; color: var(--ink); }
   .link:hover { border-color: var(--cyan); color: var(--ink); }
   .link b { display: block; }
@@ -17,7 +18,7 @@
   .savebar { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
 </style>
 </head>
-<body>
+<body class="app">
 <header class="duty">
   <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
   <nav aria-label="页面">
@@ -38,7 +39,7 @@
     <span class="spacer"></span>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
   </div>
-  <div class="layout">
+  <div class="layout top">
     <section class="panel form" aria-labelledby="t-station">
       <h2 id="t-station">岗位信息</h2>
       <label class="field" for="name">岗位名称</label>

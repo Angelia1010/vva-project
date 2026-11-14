@@ -16,8 +16,9 @@
 .dcard .state.running { color: #7BE6B1; }
 .dcard .state.trial { color: #CDBEFF; }
 .dcard .state.error { color: var(--alert-soft); }
-.dcard .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
-.dcard .acts button { min-height: 28px; padding: 2px 10px; font-size: 12px; }
+.dcard .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 6px; }
+.dcard .acts button { min-height: 26px; padding: 1px 9px; font-size: 12px; background: transparent; }
+.dcard .acts button:hover { background: var(--panel-2); }
 .dcard summary { list-style: none; cursor: pointer; }
 .dcard summary::-webkit-details-marker { display: none; }
 .thumbs { display: flex; gap: 6px; }
@@ -28,9 +29,10 @@
 
 /* ---------------- 告警卡 ---------------- */
 .acard { display: flex; gap: 12px; }
-.acard .shot { width: 112px; height: 84px; flex: 0 0 auto; }
+.acard .shot { width: 104px; height: 78px; flex: 0 0 auto; }
 .acard .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.acard .title { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 15px; }
+.acard .title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 700; font-size: 15px; }
+.acard .title .n { white-space: nowrap; }
 .acard .when { color: var(--ink-2); font: 13px var(--digits); }
 .acard .ev { font-size: 13px; color: #D3DCE7; line-height: 1.55; }
 .alert-panel { border-color: #5A2E33; background: linear-gradient(180deg, #1F1822 0%, var(--panel) 60%); }

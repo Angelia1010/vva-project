@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/static/console.css">
 <link rel="stylesheet" href="/static/duties.css">
 <style>
-  .station { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 24px 0; }
+  .station { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 20px 0; min-height: 44px; }
   .station .badge { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 15px; font-size: 13px;
                     background: rgba(61,214,140,.12); color: #7BE6B1; }
   .station .badge.off { background: rgba(242,179,61,.12); color: #F5D08A; }
@@ -22,13 +22,14 @@
   /* 固定全屏：页面本身不滚动，三栏各自在内部滚动（职责列表、待处理告警、指令对话、时间线） */
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; overflow: hidden; }
-  header.duty, #notice, .station { flex: 0 0 auto; }
+  header.duty, .station { flex: 0 0 auto; }
+  .station #notice { margin: 0; padding: 4px 12px; font-size: 12px; max-width: 46%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .scroll { overflow-y: auto; min-height: 0; overscroll-behavior: contain; padding-right: 4px; }
   .scroll::-webkit-scrollbar { width: 6px; }
   .scroll::-webkit-scrollbar-thumb { background: #2A4163; border-radius: 3px; }
   .scroll::-webkit-scrollbar-track { background: transparent; }
   /* 三栏固定：左 职责 · 中 画面 · 右 告警与指令。中栏自适应，窗口再窄也不换行，直到平板宽度才改成上下排列 */
-  main.desk { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) minmax(300px, 380px);
+  main.desk { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: clamp(270px, 19vw, 360px) minmax(0, 1fr) clamp(320px, 22vw, 430px);
               grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 12px 20px 16px; }
   .col-duties { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
   #duties-scroll { flex: 1 1 auto; }
@@ -42,7 +43,7 @@
   .empty-duties b { color: var(--ink); }
   .ask { margin-top: auto; padding: 12px; border-radius: 8px; background: var(--bar); color: var(--ink-2); font-size: 12px; line-height: 1.8; }
   .ask b { display: block; color: var(--ink-3); font-weight: 500; }
-  .setup-line { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+  .setup-line { display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
 
   /* 画面：取景框，四角刻线 */
   .viewport { position: relative; background: #0C1522; border-radius: 6px; overflow: hidden; flex: 1 1 auto; min-height: 200px; }
@@ -140,13 +141,12 @@
   <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
   <span id="clock" class="clock" aria-label="当前时间"></span>
 </header>
-<div id="notice" role="status"></div>
-
 <div class="station">
   <span class="badge" id="st-badge"><span class="dot running" aria-hidden="true"></span><span id="st-state">值守中</span></span>
   <span class="name" id="st-name">正在读取…</span>
   <span class="area" id="st-area"></span>
   <span class="spacer"></span>
+  <div id="notice" role="status"></div>
   <span class="area" id="st-owner"></span>
   <a href="/settings" style="font-size:13px">岗位设置</a>
 </div>
@@ -353,7 +353,7 @@ function renderAlerts(list) {
     const el = document.createElement("div"); el.className = "alert-item";
     const img = a.images && a.images.length ? vva.img(a.images[a.images.length - 1].file) : "";
     el.innerHTML = `<div class="acard"><div class="shot">${img ? `<img src="${img}" alt="告警画面">` : ""}</div>
-      <div class="body"><div class="title">${vva.esc(a.duty_name)} ${a.level === "urgent" ? '<span class="tag urgent">紧急</span>' : a.level === "important" ? '<span class="tag important">重要</span>' : ""}
+      <div class="body"><div class="title"><span class="n">${vva.esc(a.duty_name)}</span> ${a.level === "urgent" ? '<span class="tag urgent">紧急</span>' : a.level === "important" ? '<span class="tag important">重要</span>' : ""}
         <span class="status ${a.status}">${a.status_label}</span></div>
         <span class="when">${a.time} · ${vva.ago(a.ts)}</span><span class="ev">${vva.esc(a.evidence)}</span></div></div>
       <div class="sent">${a.rule_ref ? "依据 " + vva.esc(a.rule_ref) : ""}</div>
@@ -636,6 +636,7 @@ async function loadSetup() {
   } catch (e) { $("setup-kb").textContent = "知识库"; }
 }
 loadSetup();
+loadOverview();                        // 不等 WebSocket，先把岗位和职责显示出来
 setInterval(loadOverview, 30000);      // 生效时间段变化等需要定时刷新
 
 // ============================================================ 启动检查

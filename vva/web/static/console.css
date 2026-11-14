@@ -1,6 +1,6 @@
 /* AI 值守台：所有页面共用的样式（深色值班室主题）
    颜色只表达状态：青色 = 正在工作 / 可操作，绿色 = 运行正常，琥珀 = 处理中 / 注意，红色 = 告警，紫色 = 试运行 */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Barlow+Condensed:wght@500;600&display=swap");
+/* 字体只用系统自带的：内网、国内网络都能正常显示，不会因为加载外网字体卡住页面 */
 
 :root {
   --canvas: #0A1322;      /* 底色 */
@@ -20,13 +20,16 @@
   --lamp-alert: #FF6B5E;
   --lamp-trial: #B49CFF;
   --alert-soft: #FF9C93;
-  --digits: "Barlow Condensed", "DIN Alternate", "Arial Narrow", sans-serif;
-  --ui: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "HarmonyOS Sans SC", system-ui, sans-serif;
+  --digits: "DIN Alternate", "Bahnschrift", "DIN Condensed", "Roboto Condensed", "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei",
+        "Noto Sans SC", "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { font: 14px/1.6 var(--ui); background: var(--canvas); color: var(--ink); }
+body { font: 14px/1.6 var(--ui); background: var(--canvas); color: var(--ink);
+       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; letter-spacing: .01em; }
+h1, h2, h3 { letter-spacing: .02em; }
 a { color: #7FD8F7; }
 a:hover { color: #B5E9FB; }
 :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
@@ -113,8 +116,8 @@ label.field .muted { font-weight: 400; margin-left: 6px; }
 .dot.temp { background: var(--cyan); }
 
 /* 分段选择 */
-.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
-.seg button { flex: 1; border: 0; border-radius: 0; background: var(--bar); color: var(--ink-3); min-height: 36px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { flex: 1 0 auto; border: 0; border-radius: 0; background: var(--bar); color: var(--ink-3); min-height: 36px; white-space: nowrap; padding: 6px 14px; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: #1E4E7A; color: #fff; font-weight: 500; }
 .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid var(--line); background: var(--panel-2); color: #D3DCE7; font-size: 13px; cursor: pointer; }
@@ -132,9 +135,25 @@ label.field .muted { font-weight: 400; margin-left: 6px; }
 .page { max-width: 1180px; margin: 0 auto; padding: 22px 24px 48px; }
 .page-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-head h1 { font-size: 22px; margin: 0; font-weight: 700; }
-.page-head p { margin: 4px 0 0; color: var(--ink-2); max-width: 46em; }
+.page-head p { margin: 4px 0 0; color: var(--ink-2); max-width: 60em; font-size: 13px; }
 .page-head .spacer { flex: 1; }
 .token { display: none; width: 160px; }
+
+/* 应用外壳：屏幕够大时整页固定在一屏内，不出现整页滚动，各区域内部滚动 */
+.scroll { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+@media (min-width: 1100px) and (min-height: 640px) {
+  body.app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  body.app > header.duty { flex: 0 0 auto; }
+  body.app > .page { flex: 1 1 auto; min-height: 0; width: 100%; max-width: none; display: flex; flex-direction: column; padding: 16px 24px 16px; }
+  body.app .page-head { flex: 0 0 auto; margin-bottom: 14px; }
+  body.app .page > .layout { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+  body.app .page > .layout.top { align-items: start; }      /* 内容不多的页面（如设置）：面板按内容高度，不拉满 */
+  body.app .page > .layout > * { min-height: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #2A4163; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: #3A5A86; }
+*::-webkit-scrollbar-track { background: transparent; }
 
 /* 截图占位 */
 .shot { position: relative; overflow: hidden; border-radius: 6px; background: radial-gradient(90% 90% at 40% 30%, #2B3E55, #0C1522); border: 1px solid var(--line); }
