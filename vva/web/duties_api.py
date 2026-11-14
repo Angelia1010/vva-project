@@ -108,7 +108,7 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
     @api.get("/api/overview")
     async def overview() -> JSONResponse:
         return JSONResponse({"station": app.station.to_dict(), "duties": m.status_list(), "stats": m.alerts.stats(),
-                             "open_alerts": m.alerts.open_alerts(5), "token_required": bool(admin_token)})
+                             "open_alerts": m.alerts.open_alerts(30), "token_required": bool(admin_token)})
 
     @api.get("/api/station")
     async def get_station() -> JSONResponse:
