@@ -3,25 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>飞书 - 监控值守台</title>
+<title>飞书 - AI 值守台</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 20px; align-items: start; }
 
   /* 连接状态条 */
   .state { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px;
-           background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid #9aa7b3; border-radius: 6px; }
+           background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid #5B6B82; border-radius: 6px; }
   .state.ok { border-left-color: var(--lamp-ok); } .state.err { border-left-color: var(--lamp-alert); } .state.warn { border-left-color: var(--lamp-busy); }
-  .state .lamp { width: 12px; height: 12px; border-radius: 50%; background: #9aa7b3; flex: 0 0 auto; }
+  .state .lamp { width: 12px; height: 12px; border-radius: 50%; background: #5B6B82; flex: 0 0 auto; }
   .state.ok .lamp { background: var(--lamp-ok); box-shadow: 0 0 6px var(--lamp-ok); }
   .state.err .lamp { background: var(--lamp-alert); } .state.warn .lamp { background: var(--lamp-busy); }
   .state .text { flex: 1; min-width: 220px; }
   .state .text strong { display: block; font-size: 15px; }
   .state .text span { color: var(--ink-2); font-size: 13px; }
   .notes { margin: -6px 0 16px; display: grid; gap: 6px; }
-  .note { padding: 8px 12px; font-size: 13px; background: #fff8e8; border-left: 3px solid var(--lamp-busy); color: #6e4c00; }
-  .note.restart { background: #fdf0ee; border-left-color: var(--lamp-alert); color: #8a2a20; display: flex; align-items: center; gap: 12px; }
-  .note code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
+  .note { padding: 8px 12px; font-size: 13px; background: rgba(242,179,61,.08); border-left: 3px solid var(--lamp-busy); color: #F5D08A; }
+  .note.restart { background: rgba(255,107,94,.1); border-left-color: var(--lamp-alert); color: #FF9C93; display: flex; align-items: center; gap: 12px; }
+  .note code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 3px; }
 
   /* 表单分组：同一个面板里用分隔线分段 */
   .form { padding: 0; }
@@ -32,7 +32,7 @@
   textarea.ids { min-height: 64px; font-family: var(--digits); font-size: 13px; }
   .switches { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 12px; }
   .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
-  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #b7c1ca; position: relative; cursor: pointer; margin: 0; }
+  .switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: #2A4163; position: relative; cursor: pointer; margin: 0; }
   .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
   .switch input:checked { background: var(--lamp-ok); }
   .switch input:checked::after { left: 18px; }
@@ -42,12 +42,12 @@
   .result { font-size: 13px; } .result.ok { color: var(--lamp-ok); } .result.err { color: var(--lamp-alert); }
   .savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 12px 18px;
              background: var(--panel); border-top: 1px solid var(--rule); border-radius: 0 0 6px 6px; box-shadow: 0 -6px 12px -10px rgba(23,33,43,.35); }
-  .savebar .dirty { color: #8a5a00; font-size: 13px; display: none; }
+  .savebar .dirty { color: #F5D08A; font-size: 13px; display: none; }
   .savebar .dirty.on { display: inline; }
 
   /* 右侧：最近的消息 */
   .side { display: grid; gap: 16px; position: sticky; top: 16px; }
-  .chat { padding: 10px 0; border-bottom: 1px solid #e3e8ec; font-size: 13px; }
+  .chat { padding: 10px 0; border-bottom: 1px solid #22344F; font-size: 13px; }
   .chat:last-child { border-bottom: 0; }
   .chat .head { display: flex; gap: 8px; align-items: baseline; }
   .chat .kind { font-size: 11px; padding: 0 6px; border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-2); }
@@ -59,20 +59,21 @@
   .empty { color: var(--ink-2); font-size: 13px; line-height: 1.8; }
   details.steps summary { cursor: pointer; font-weight: 600; font-size: 15px; }
   details.steps ol { padding-left: 20px; margin: 10px 0 0; font-size: 13px; line-height: 1.9; }
-  details.steps code { background: #eef1f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  details.steps code { background: #15243A; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 
   @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .side { position: static; } .row2 { grid-template-columns: 1fr; } }
 </style>
 </head>
-<body>
+<body class="app">
 <header class="duty">
-  <span class="brand">监控值守台</span>
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
   <nav aria-label="页面">
-    <a href="/browser">监控</a>
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
     <a href="/skills">技能</a>
     <a href="/knowledge">知识库</a>
-    <a href="/feishu" aria-current="page">飞书</a>
-    <a href="/dingtalk">钉钉</a>
+    <a href="/settings" aria-current="page">设置</a>
   </nav>
   <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
   <span id="clock" class="clock" aria-label="当前时间"></span>

@@ -159,7 +159,7 @@ def test_answer_limiter():
 def test_agent_prompt_role_and_notes():
     agent = Agent(FakeLLM([]), ToolSet(), max_answer_chars=60, notes_provider=lambda: ["[n1] 3 号工位是张工的"])
     system = agent._system()["content"]
-    assert "监控值守助手" in system and "不在画面里" in system
+    assert "AI 值守员" in system and "不在画面里" in system
     assert "不超过30个字" in system
     assert "[n1] 3 号工位是张工的" in system
     assert "星期" in system
@@ -168,7 +168,7 @@ def test_agent_prompt_role_and_notes():
 
 def test_agent_forces_tool_on_first_round():
     async def run():
-        llm = FakeLLM([[("list_watches", {})], "当前没有提醒。"])
+        llm = FakeLLM([[("search_timeline", {})], "当前没有提醒。"])
         from vva.agent.tools import VisionTools
         from vva.perception.timeline import Timeline
         from vva.video.frame_buffer import FrameBuffer

@@ -88,6 +88,19 @@ DEFAULTS: dict[str, Any] = {
         "ignore_phrases": None,      # 要丢弃的识别结果（语气词、常见误识别）；None 用内置列表
         "ptt_min_ms": 300,           # 按住说话时，短于该时长的按下视为误触
     },
+    "station": {                     # 岗位初始信息（之后在值守台“设置”里修改，保存在 data/ops.db）
+        "name": "1 号点位",
+        "area": "",                  # 看哪里，如“仓库大门和装卸区，左侧是叉车通道”
+        "scene": "",                 # 场景说明，如“仓库内禁止吸烟”
+        "owner": "",                 # 岗位负责人
+    },
+    "duties": {
+        "db": "data/ops.db",         # 岗位、职责、告警
+        "alerts_dir": "data/alerts", # 告警截图
+        "alert_image_days": 90,      # 告警截图保留天数（记录本身一直保留）
+        "verify_delay": 2.0,         # 初次命中后隔几秒复核
+        "verify_side": 1280,         # 复核、巡检时画面的最长边
+    },
     "skills": {
         "enabled": True,
         "dir": "skills",             # 技能目录（相对于启动目录），可在网页 /skills 页面管理

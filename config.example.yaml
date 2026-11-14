@@ -128,6 +128,20 @@ memory:
   keyframe_retention_days: 7
   summary_minutes: 10         # 每 10 分钟生成一段摘要；0 表示不生成
 
+# ---------------------------------------------------------------- 岗位与职责
+# 岗位信息首次启动时写入 data/ops.db，之后在网页“设置”里修改；职责在值守台“添加职责”或 /duties 页面配置
+station:
+  name: "1 号点位"
+  area: ""                   # 看哪里，如“仓库大门和装卸区，左侧是叉车通道”
+  scene: ""                  # 场景说明，如“仓库内禁止吸烟”
+  owner: ""                  # 岗位负责人
+duties:
+  db: data/ops.db            # 岗位、职责、告警
+  alerts_dir: data/alerts    # 告警截图
+  alert_image_days: 90       # 截图保留天数
+  verify_delay: 2.0          # 初次命中后隔几秒放大复核
+  verify_side: 1280          # 复核、巡检时画面的最长边
+
 # ---------------------------------------------------------------- 技能
 # 在网页 /skills 页面管理；每个技能一个目录（SKILL.md + objects/ + 可选 tools.py）
 skills:

@@ -1,7 +1,7 @@
 """网页服务：实时画面（MJPEG）、对话与事件（WebSocket）、外部推流接入接口。
 
 接口一览：
-  GET  /                    测试页面
+  GET  /                    跳转到值守台 /browser
   GET  /video.mjpg          实时画面
   GET  /api/snapshot.jpg    当前画面截图
   GET  /api/status          运行状态
@@ -10,6 +10,7 @@
   WS   /ws                  前端事件通道
   POST /api/ingest/frame    推送一帧 JPEG（video.type=push 时可用）
   WS   /api/ingest/audio    双向音频（audio.input/output.type=push 时可用）
+  岗位、职责、告警的接口见 duties_api.py；技能、知识库、钉钉飞书配置见各自的 *_api.py
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from vva.app import WEB_SESSION, App
 from vva.core.bus import TOPIC_UI
@@ -52,7 +53,11 @@ def create_web_app(app: App) -> FastAPI:
     api.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")   # 页面共用的样式和脚本
 
     @api.get("/")
-    async def index() -> FileResponse:
+    async def index() -> RedirectResponse:
+        return RedirectResponse("/browser")          # 值守台同时支持浏览器摄像头和服务端摄像头
+
+    @api.get("/legacy")
+    async def legacy() -> FileResponse:
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
     @api.get("/browser")
@@ -222,6 +227,10 @@ def create_web_app(app: App) -> FastAPI:
     if app.skills:
         from vva.web.skills_api import register_skill_routes
         register_skill_routes(api, app.skills, app.snapshot, web_cfg.get("admin_token") or "", STATIC_DIR)
+
+    # ------------------------------------------------------------ 岗位、职责、告警
+    from vva.web.duties_api import register_duty_routes
+    register_duty_routes(api, app, web_cfg.get("admin_token") or "", STATIC_DIR)
 
     # ------------------------------------------------------------ 飞书等接入入口的配置
     from vva.web.channels_api import register_channel_routes

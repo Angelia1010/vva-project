@@ -101,7 +101,8 @@ class MemoryRecorder:
                 if topic == TOPIC_OBSERVATION:
                     await self.record_observation(msg["entry"], msg.get("jpeg"))
                 elif topic == TOPIC_ALERT:
-                    self.record_alert(msg)
+                    if msg.get("kind", "alert") == "alert":     # 报告不记成提醒
+                        self.record_alert(msg)
                 elif msg.get("type") == "user":
                     self.record_command(msg.get("text", ""), msg.get("source", ""))
             except asyncio.CancelledError:
