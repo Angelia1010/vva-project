@@ -21,7 +21,8 @@ def describe_target(target: str, labels: dict[str, str] | None = None) -> str:
     if target == "voice":
         return "现场播报"
     if target == "default":
-        return "默认告警群"
+        # labels 由应用提供：设置了默认告警群时会有 "default" 这一项；没有就说明实际没发出去
+        return "默认告警群" if labels is None or "default" in labels else "默认告警群（未设置，没有发出）"
     ch, _, chat = target.partition(":")
     return f"{CHANNEL_LABELS.get(ch, ch)}·{chat[:10]}" if chat else CHANNEL_LABELS.get(ch, target)
 
