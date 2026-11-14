@@ -12,7 +12,7 @@
   POST /api/duties/templates/{tpl}       按模板批量添加 {"names": [...], "targets": [...], "mode": "live|trial"}
   GET  /api/duties/changes               最近的职责变更（全部）
   GET  /api/duties/{id}/changes          某条职责的变更记录
-  GET  /api/alerts                       告警列表 ?status=pending&duty=d1&days=1
+  GET  /api/alerts                       告警列表 ?status=pending&duty=d1&days=7（days=0 为全部时间；只看待处理时不限日期）
   GET  /api/alerts/{id}                  告警详情（含处理经过）
   POST /api/alerts/{id}/action           处理 {"action": "ack|handling|resolve|false|trial_ok", "actor", "note", "add_ref"}
   GET  /api/alerts/image/{path}          告警截图
@@ -224,9 +224,11 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
 
     # ---------------------------------------------------------------- 告警
     @api.get("/api/alerts")
-    async def alerts(status: str = "", duty: str = "", days: float = 1) -> JSONResponse:
-        start = day_start() - (max(1.0, days) - 1) * 86400
+    async def alerts(status: str = "", duty: str = "", days: float = 7) -> JSONResponse:
         statuses = tuple(s for s in status.split(",") if s) if status else ()
+        # days <= 0 表示全部时间；只看待处理 / 处理中时不限日期（没处理的告警不管哪天的都要能看到）
+        open_only = bool(statuses) and set(statuses) <= {"pending", "handling"}
+        start = 0.0 if days <= 0 or open_only else day_start() - (max(1.0, days) - 1) * 86400
         items = [a for a in m.alerts.list(start=start, duty_id=duty, statuses=statuses, limit=500)
                  if status or a["status"] != "record"]
         return JSONResponse({"alerts": items, "stats": m.alerts.stats(),

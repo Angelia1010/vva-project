@@ -79,7 +79,7 @@
     <label for="f-duty" class="sr-only">职责</label>
     <select id="f-duty"><option value="">全部职责</option></select>
     <label for="f-days" class="sr-only">时间</label>
-    <select id="f-days"><option value="1">今天</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option></select>
+    <select id="f-days"><option value="1">今天</option><option value="7" selected>最近 7 天</option><option value="30">最近 30 天</option><option value="0">全部时间</option></select>
   </div>
 
   <div class="layout">
@@ -92,7 +92,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-let status = "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false, listed = [];
+let status = params.get("status") || "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false, listed = [];
 function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
 const lvl = (l) => l === "urgent" ? '<span class="tag urgent">紧急</span>' : l === "important" ? '<span class="tag important">重要</span>' : "";
 const boxStyle = (b) => b ? `left:${b[0] * 100}%;top:${b[1] * 100}%;width:${(b[2] - b[0]) * 100}%;height:${(b[3] - b[1]) * 100}%` : "";
@@ -126,7 +126,7 @@ async function load() {
     const img = a.images.length ? vva.img(a.images[a.images.length - 1].file) : "";
     b.innerHTML = `<div class="shot">${img ? `<img src="${img}" alt="" loading="lazy">` : ""}</div>
       <div class="b"><div style="display:flex;gap:8px;align-items:center"><b>${vva.esc(a.duty_name)}</b>${lvl(a.level)}</div>
-        <span class="ev">${vva.esc(a.evidence)}</span><span class="t">${a.time}${$("f-days").value !== "1" ? " · " + new Date(a.ts * 1000).toLocaleDateString("zh-CN") : ""}</span></div>
+        <span class="ev">${vva.esc(a.evidence)}</span><span class="t">${a.time}${new Date(a.ts * 1000).toDateString() !== new Date().toDateString() ? " · " + new Date(a.ts * 1000).toLocaleDateString("zh-CN") : ""}</span></div>
       <span class="status ${a.status}">${a.status_label}</span>`;
     b.onclick = () => { current = a.id; rows.querySelectorAll(".row").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "true"); showDetail(a.id); };
     rows.appendChild(b);
@@ -185,6 +185,8 @@ $("f-status").querySelectorAll("button").forEach(b => b.onclick = () => {
   load();
 });
 $("f-duty").onchange = $("f-days").onchange = () => { current = 0; load(); };
+// 从值守台“告警中心”跳过来时带着 status=pending：选中“待处理”
+$("f-status").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.v === status || (!status && !x.dataset.v))));
 
 load();
 setInterval(() => { if (!document.activeElement || !["TEXTAREA", "INPUT"].includes(document.activeElement.tagName)) load(); }, 20000);
