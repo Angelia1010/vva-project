@@ -82,3 +82,11 @@
   border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); transition: transform .15s; }
 .dcard[open] summary::after { transform: rotate(-135deg); top: 10px; }
 .dcard summary:hover .name { color: #fff; }
+
+/* 职责卡的三要素：行为名称（标题）、处置动作、职责期限 */
+.dcard .facts { margin: 2px 0 0; display: grid; gap: 3px; font-size: 12px; }
+.dcard .facts div { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.dcard .facts dt { flex: 0 0 auto; color: var(--ink-2); padding: 0 5px; border-radius: 3px; background: #1B2C47; font-size: 11px; line-height: 17px; }
+.dcard .facts dd { margin: 0; color: #D3DCE7; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcard .facts dd.warn { color: #F5D08A; }
+.dcard[open] .facts dd { white-space: normal; }

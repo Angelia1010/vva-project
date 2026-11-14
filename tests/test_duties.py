@@ -319,3 +319,18 @@ def test_observer_matches_rule_by_name_and_recent_chats_persist(tmp_path):
          "text": {"content": "hi"}, "conversationTitle": "安全群"}))
     ch2 = DingTalkChannel({"client_id": "a", "client_secret": "b", "_recent_file": path}, FakeHost(), api=FakeAPI(), receiver=FakeReceiver())
     assert list(ch2.recent) == ["cidG"] and ch2.recent["cidG"]["title"] == "安全群"
+
+
+def test_duty_card_action_and_period_text():
+    from vva.alerts.service import day_start
+    m = make_duties()
+    m.target_options = lambda: [{"id": "web", "label": "值守台"}, {"id": "voice", "label": "现场播报"},
+                                {"id": "dingtalk:cidA", "label": "钉钉·安全群"}]
+    m.book.create(name="禁止吸烟", condition="有人吸烟", targets=["web", "dingtalk:cidA", "voice"],
+                  weekdays=[1, 2, 3, 4, 5], hours="08:00-18:00")
+    m.book.create(name="快递提醒", condition="快递到门口", targets=["web"], temporary=True,
+                  expires=day_start() + 86400 + 18 * 3600)
+    a, b = m.status_list()
+    assert a["action_text"] == "发钉钉·安全群、现场喇叭播报" and a["period_text"] == "工作日 08:00-18:00"
+    assert b["action_text"] == "未设置推送" and b["period_text"] == "截止到明天 18:00"
+    assert "处置：发钉钉·安全群" in m.prompt_block()

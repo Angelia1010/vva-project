@@ -104,12 +104,34 @@ class Duty:
         """后台观察现在要不要判断这条职责（只对盯守类有意义）。"""
         return self.kind == "watch" and self.enabled and not self.expired(now) and self.in_schedule(now)
 
+    def days_text(self) -> str:
+        if not self.weekdays or len(self.weekdays) == 7:
+            return "每天"
+        if self.weekdays == [1, 2, 3, 4, 5]:
+            return "工作日"
+        if self.weekdays == [6, 7]:
+            return "周末"
+        return "每周" + "".join("一二三四五六日"[d - 1] for d in self.weekdays)
+
     def schedule_text(self) -> str:
+        """生效时间，如“每天 全天”“工作日 08:00-18:00”“每天 09:00、15:00”。"""
         if self.kind in ("inspect", "report"):
-            return "每天 " + "、".join(self.times) if self.times else "未设置时间"
-        days = "" if not self.weekdays or len(self.weekdays) == 7 else (
-            "工作日 " if self.weekdays == [1, 2, 3, 4, 5] else "每周" + "".join("一二三四五六日"[d - 1] for d in self.weekdays) + " ")
-        return (days + (self.hours or "全天")).strip()
+            return f"{self.days_text()} {'、'.join(self.times)}" if self.times else "未设置时间"
+        return f"{self.days_text()} {self.hours or '全天'}"
+
+    def period_text(self, now: float | None = None) -> str:
+        """职责期限：长期职责为生效时间；临时任务为“截止到 今天 18:00”。"""
+        if not (self.temporary and self.expires):
+            return self.schedule_text()
+        now = now or time.time()
+        t, n = time.localtime(self.expires), time.localtime(now)
+        hm = time.strftime("%H:%M", t)
+        days = (time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+                - time.mktime((n.tm_year, n.tm_mon, n.tm_mday, 0, 0, 0, 0, 0, -1))) / 86400
+        if hm == "00:00":          # 午夜到期按“当天结束”说
+            days, hm = days - 1, "24:00"
+        day = {0: "今天", 1: "明天", 2: "后天"}.get(round(days), time.strftime("%m-%d", t))
+        return f"截止到{day} {hm}"
 
     def to_record(self) -> dict[str, Any]:
         return asdict(self)

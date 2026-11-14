@@ -61,8 +61,9 @@
     const s = state.duty, isNew = !s.id;
     const body = document.getElementById("dd-body");
     const weekVal = (s.weekdays || []).join(",");
-    const targets = meta.targets.slice();
-    for (const t of s.targets || []) if (!targets.some(o => o.id === t)) targets.push({ id: t, label: t });
+    // 值守台提醒默认就有，不作为选项显示；现场播报写成“现场喇叭播报”
+    const targets = meta.targets.filter(t => t.id !== "web").map(t => t.id === "voice" ? { ...t, label: "现场喇叭播报" } : t);
+    for (const t of s.targets || []) if (t !== "web" && !targets.some(o => o.id === t)) targets.push({ id: t, label: t });
     body.innerHTML = `
       ${isNew ? `<div>
         <label class="lbl" for="dd-say">用一句话描述 <span class="muted">· 例如“仓库里有人吸烟就发钉钉安全群，紧急”</span></label>
@@ -86,14 +87,14 @@
       ${meta.objects.length && s.kind !== "report" ? `<div><span class="lbl">引用技能目标 <span class="muted">· 判断时带上它们的参考图</span></span>
         ${chipList("objects", meta.objects.map(o => ({ id: o, label: o })), s.objects || [])}</div>` : ""}
       ${s.kind === "watch" ? `<div class="row2">
-        <div><label class="lbl" for="dd-hours">生效时间 <span class="muted">· 留空为全天</span></label><input id="dd-hours" type="text" value="${esc(s.hours)}" placeholder="08:00-18:00"></div>
+        <div><label class="lbl" for="dd-hours">期限 · 每天几点 <span class="muted">· 留空为全天</span></label><input id="dd-hours" type="text" value="${esc(s.hours)}" placeholder="08:00-18:00"></div>
         <div><span class="lbl">哪几天</span>${seg("week", WEEK, WEEK.some(w => w[0] === weekVal) ? weekVal : "")}</div>
       </div>` : `<div class="row2">
-        <div><label class="lbl" for="dd-times">执行时间 <span class="muted">· 多个用逗号分开</span></label><input id="dd-times" type="text" value="${esc((s.times || []).join(", "))}" placeholder="09:00, 15:00"></div>
+        <div><label class="lbl" for="dd-times">期限 · 执行时间 <span class="muted">· 多个用逗号分开</span></label><input id="dd-times" type="text" value="${esc((s.times || []).join(", "))}" placeholder="09:00, 15:00"></div>
         <div><span class="lbl">哪几天</span>${seg("week", WEEK, WEEK.some(w => w[0] === weekVal) ? weekVal : "")}</div>
       </div>`}
       ${s.kind !== "report" ? `<div><span class="lbl">级别</span>${seg("level", LEVELS, s.level)}</div>` : ""}
-      <div><span class="lbl">${s.kind === "report" ? "发给谁" : "发现后通知谁"}</span>${chipList("targets", targets, s.targets || [])}
+      <div><span class="lbl">处置动作 <span class="muted">· ${s.kind === "report" ? "报告发给谁" : "发现后发钉钉、飞书或现场喇叭播报（值守台总会提醒）"}</span></span>${chipList("targets", targets, s.targets || [])}
         ${targets.some(t => t.id === "default" || t.id.includes(":")) ? `<p class="muted" style="margin:6px 0 0;font-size:12px">要推到钉钉 / 飞书，记得选上对应的群；只选“值守台”时只在网页上提醒。</p>`
           : `<div class="hintbox" style="margin-top:8px">还没有可选的钉钉 / 飞书群，所以现在只能在值守台提醒。先在“设置 → 钉钉”接入，把机器人拉进群并 @它 说一句话，回到这里刷新就能选到这个群。</div>`}</div>
       ${s.kind === "watch" ? `<div class="box">
@@ -132,6 +133,7 @@
   function collect() {
     const s = state.duty, val = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : undefined; };
     const out = { ...s, name: val("dd-name"), condition: val("dd-cond") };
+    out.targets = ["web", ...(s.targets || []).filter(t => t !== "web")];     // 值守台提醒始终保留
     if (document.getElementById("dd-hours")) out.hours = val("dd-hours");
     if (document.getElementById("dd-times")) out.times = val("dd-times").split(/[\s,，、]+/).filter(Boolean);
     if (document.getElementById("dd-voice")) out.voice_text = val("dd-voice");
@@ -233,7 +235,7 @@
           <div class="d">${esc(i.condition)}${i.hours ? "；" + esc(i.hours) : ""}${i.times ? "；每天 " + esc(i.times.join("、")) : ""}</div>
           ${i.hint ? `<div class="d" style="color:#F5D08A">${esc(i.hint)}</div>` : ""}</span></label>`).join("")}
         </div></div>
-        <div><span class="lbl">统一通知到</span>${chipList("tpl-targets", meta.targets, meta.targets.some(t => t.id === "default") ? ["default", "web"] : ["web"])}</div>
+        <div><span class="lbl">处置动作 <span class="muted">· 统一发到（值守台总会提醒）</span></span>${chipList("tpl-targets", meta.targets.filter(t => t.id !== "web").map(t => t.id === "voice" ? { ...t, label: "现场喇叭播报" } : t), meta.targets.some(t => t.id === "default") ? ["default"] : [])}</div>
         <label class="switch"><input type="checkbox" id="tpl-trial" checked>盯守类先试运行（只记录不通知，确认准确后再正式开启）</label>`;
       body.querySelectorAll("[data-seg]").forEach(b => b.onclick = () => { cur = b.dataset.v; draw(); });
       body.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")));
@@ -244,7 +246,7 @@
     document.getElementById("dd-cancel").onclick = close;
     document.getElementById("dd-save").onclick = async () => {
       const names = [...body.querySelectorAll(".tpl input:checked")].map(i => i.value);
-      const targets = [...body.querySelectorAll('[data-chip="tpl-targets"][aria-pressed="true"]')].map(b => b.dataset.v);
+      const targets = ["web", ...[...body.querySelectorAll('[data-chip="tpl-targets"][aria-pressed="true"]')].map(b => b.dataset.v)];
       if (!names.length) { msg("请至少勾选一项", "err"); return; }
       try {
         const r = await vva.api("POST", "/api/duties/templates/" + cur, { names, targets, mode: document.getElementById("tpl-trial").checked ? "trial" : "live" });
@@ -282,13 +284,18 @@ window.dutyCard = function (d, actions, opts) {
   if (o.open) el.open = true;
   const dot = d.temporary ? "temp" : (d.state === "running" ? "running" : d.state);
   const count = d.kind === "inspect" ? "" : (d.kind === "report" ? "" : String(d.today_count));
+  const noPush = d.action_text === "未设置推送" || /未设置/.test(d.action_text || "");
+  const showState = d.state !== "running" || d.kind !== "watch";
   el.innerHTML = `<summary>
-      <div class="top"><span class="dot ${dot}" aria-hidden="true"></span><span class="name">${esc(d.name)}</span>
-        ${d.temporary ? "" : `<span class="tag">${esc(d.kind_label)}</span>`}
+      <div class="top"><span class="dot ${dot}" aria-hidden="true"></span><span class="name" title="${esc(d.condition)}">${esc(d.name)}</span>
+        ${d.temporary ? '<span class="tag">临时</span>' : (d.kind !== "watch" ? `<span class="tag">${esc(d.kind_label)}</span>` : "")}
         ${d.level === "urgent" ? '<span class="tag urgent">紧急</span>' : d.level === "important" ? '<span class="tag important">重要</span>' : ""}
         ${count !== "" ? `<span class="count ${hot ? "hot" : ""}" title="今天的告警次数">${count}</span>` : ""}</div>
-      <div class="meta"><span>${d.temporary ? "到 " + esc(d.expires_text.slice(-8, -3) || d.expires_text) + " 为止" : esc(d.schedule)}</span><span aria-hidden="true">→</span><span class="to">${esc(d.target_text)}</span></div>
-      <div class="state ${d.state}">${esc(d.state_text)}${d.temporary && d.created_by ? " · " + esc(d.created_by) + "下达" : ""}</div>
+      <dl class="facts">
+        <div><dt>处置</dt><dd class="${noPush ? "warn" : ""}">${esc(d.action_text || "")}</dd></div>
+        <div><dt>期限</dt><dd>${esc(d.period_text || d.schedule)}</dd></div>
+      </dl>
+      ${showState || d.temporary ? `<div class="state ${d.state}">${esc(d.state_text)}${d.temporary && d.created_by ? " · " + esc(d.created_by) + "下达" : ""}</div>` : ""}
     </summary>
     <div class="acts"></div>`;
   const acts = el.querySelector(".acts");

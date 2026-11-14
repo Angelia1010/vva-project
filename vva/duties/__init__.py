@@ -81,6 +81,28 @@ class DutyManager:
         labels = {o["id"]: o["label"] for o in self.target_options()}
         return "、".join(describe_target(t, labels) for t in targets)
 
+    def action_text(self, d: Duty) -> str:
+        """处置动作，如“发钉钉·安全群、现场喇叭播报”；值守台提醒是默认就有的，不写。"""
+        labels = {o["id"]: o["label"] for o in self.target_options()}
+        acts = []
+        for t in d.effective_targets():
+            if t == "web":
+                continue
+            if t == "voice":
+                acts.append("现场喇叭播报")
+            elif t == "default":
+                acts.append("发默认告警群" if "default" in labels else "发默认告警群（未设置）")
+            else:
+                acts.append("发" + describe_target(t, labels))
+        if not acts:
+            return "未设置推送"
+        text = "、".join(acts)
+        if d.kind == "inspect":
+            return "异常时" + text
+        if d.kind == "report":
+            return text.replace("发", "报告发到", 1)
+        return text
+
     def state_of(self, d: Duty, now: float) -> tuple[str, str]:
         """(状态, 说明)：running 运行中 | idle 未到生效时间 | paused 已暂停 | trial 试运行 | error 异常"""
         problems = [p for p in (self.target_problem(t) for t in d.effective_targets()) if p]
@@ -108,7 +130,8 @@ class DutyManager:
             state, text = self.state_of(d, now)
             info = today.get(d.id, {})
             out.append({**d.to_dict(), "state": state, "state_text": text, "today_count": info.get("count", 0),
-                        "target_text": self.target_labels(d.effective_targets())})
+                        "target_text": self.target_labels(d.effective_targets()),
+                        "action_text": self.action_text(d), "period_text": d.period_text(now)})
         return out
 
     def summary(self) -> str:
@@ -127,10 +150,10 @@ class DutyManager:
         temp = [d for d in items if d["temporary"]]
         lines = []
         for d in long:
-            lines.append(f"- {d['id']} {d['name']}（{d['kind_label']}；{d['schedule']}；通知{d['target_text']}；"
+            lines.append(f"- {d['id']} {d['name']}（{d['kind_label']}；处置：{d['action_text']}；期限：{d['period_text']}；"
                          f"{d['state_text']}；今天 {d['today_count']} 次）")
         for d in temp:
-            lines.append(f"- {d['id']} {d['name']}（临时任务，{d['expires_text']} 到期；通知{d['target_text']}；"
+            lines.append(f"- {d['id']} {d['name']}（临时任务；处置：{d['action_text']}；期限：{d['period_text']}；"
                          f"{d['state_text']}）")
         return (f"\n## 你的职责（实时：长期职责 {len(long)} 项，临时任务 {len(temp)} 个。"
                 "职责随时会被增删，之前对话里说过的数量和名称作废，一律以这里为准）\n" + "\n".join(lines) + "\n")

@@ -127,6 +127,5 @@ class DutyTools(ToolProvider):
 
 
 def _brief(d: dict[str, Any]) -> dict[str, Any]:
-    return {"id": d["id"], "name": d["name"], "type": d["kind_label"], "when": d["schedule"],
-            "notify": d["target_text"], "state": d["state_text"], "today": d["today_count"],
-            **({"until": d["expires_text"]} if d["temporary"] else {})}
+    return {"id": d["id"], "name": d["name"], "type": d["kind_label"], "action": d["action_text"],
+            "period": d["period_text"], "state": d["state_text"], "today": d["today_count"]}
