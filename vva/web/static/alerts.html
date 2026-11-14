@@ -80,8 +80,6 @@
     <select id="f-duty"><option value="">全部职责</option></select>
     <label for="f-days" class="sr-only">时间</label>
     <select id="f-days"><option value="1">今天</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option></select>
-    <span style="flex:1"></span>
-    <button type="button" class="danger" id="btn-del-all" disabled>删除列表中的告警</button>
   </div>
 
   <div class="layout">
@@ -116,8 +114,6 @@ async function load() {
   }
   const rows = $("rows"); rows.innerHTML = "";
   listed = r.alerts.map(a => a.id);
-  $("btn-del-all").disabled = !listed.length;
-  $("btn-del-all").textContent = listed.length ? `删除列表中的 ${listed.length} 条` : "删除列表中的告警";
   if (!r.alerts.length) {
     rows.innerHTML = '<p class="empty">这段时间没有记录。</p>';
     $("detail").innerHTML = '<p class="empty">选择左侧的一条告警查看详情。</p>';
@@ -189,12 +185,7 @@ $("f-status").querySelectorAll("button").forEach(b => b.onclick = () => {
   load();
 });
 $("f-duty").onchange = $("f-days").onchange = () => { current = 0; load(); };
-$("btn-del-all").onclick = async () => {
-  if (!listed.length) return;
-  if (!confirm(`删除列表中的 ${listed.length} 条告警？截图和处理经过会一起删除，不能恢复。`)) return;
-  try { const r = await vva.api("POST", "/api/alerts/delete", { ids: listed }); msg(`已删除 ${r.deleted} 条`, "ok"); current = 0; load(); }
-  catch (e) { msg("删除失败：" + e.message, "err"); }
-};
+
 load();
 setInterval(() => { if (!document.activeElement || !["TEXTAREA", "INPUT"].includes(document.activeElement.tagName)) load(); }, 20000);
 </script>
