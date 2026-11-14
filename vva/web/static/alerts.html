@@ -57,6 +57,7 @@
   <div class="page-head">
     <div><h1>告警中心</h1><p id="sub">职责命中后的记录：截图、依据、通知了谁、谁在什么时候处理的。</p></div>
     <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
     <div class="stats">
       <div><span>今日告警</span><b id="s-today">0</b></div>
       <div><span>待处理</span><b id="s-pending">0</b></div>
@@ -78,6 +79,8 @@
     <select id="f-duty"><option value="">全部职责</option></select>
     <label for="f-days" class="sr-only">时间</label>
     <select id="f-days"><option value="1">今天</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option></select>
+    <span style="flex:1"></span>
+    <button type="button" class="danger" id="btn-del-all" disabled>删除列表中的告警</button>
   </div>
 
   <div class="layout">
@@ -90,7 +93,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-let status = "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false;
+let status = "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false, listed = [];
 function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
 const lvl = (l) => l === "urgent" ? '<span class="tag urgent">紧急</span>' : l === "important" ? '<span class="tag important">重要</span>' : "";
 const boxStyle = (b) => b ? `left:${b[0] * 100}%;top:${b[1] * 100}%;width:${(b[2] - b[0]) * 100}%;height:${(b[3] - b[1]) * 100}%` : "";
@@ -111,7 +114,15 @@ async function load() {
     if (params.get("duty")) { sel.value = params.get("duty"); return load(); }
   }
   const rows = $("rows"); rows.innerHTML = "";
-  if (!r.alerts.length) { rows.innerHTML = '<p class="empty">这段时间没有记录。</p>'; return; }
+  listed = r.alerts.map(a => a.id);
+  $("btn-del-all").disabled = !listed.length;
+  $("btn-del-all").textContent = listed.length ? `删除列表中的 ${listed.length} 条` : "删除列表中的告警";
+  if (!r.alerts.length) {
+    rows.innerHTML = '<p class="empty">这段时间没有记录。</p>';
+    $("detail").innerHTML = '<p class="empty">选择左侧的一条告警查看详情。</p>';
+    return;
+  }
+  if (current && !listed.includes(current)) current = 0;
   for (const a of r.alerts) {
     const b = document.createElement("button"); b.type = "button"; b.className = "row";
     if (a.id === current) b.setAttribute("aria-current", "true");
@@ -134,7 +145,8 @@ async function showDetail(id) {
   $("detail").innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <h2 style="margin:0;font-size:18px">${vva.esc(a.duty_name)}</h2>${lvl(a.level)}<span class="status ${a.status}">${a.status_label}</span>
-      <span style="flex:1"></span><span class="num" style="color:var(--ink-2);font-size:15px">${new Date(a.ts * 1000).toLocaleString("zh-CN", { hour12: false })}</span></div>
+      <span style="flex:1"></span><span class="num" style="color:var(--ink-2);font-size:15px">${new Date(a.ts * 1000).toLocaleString("zh-CN", { hour12: false })}</span>
+      <button type="button" class="danger" id="btn-del" style="min-height:30px;padding:2px 12px">删除</button></div>
     <div class="shots">${a.images.map((im, i) => `<figure><div class="shot"><img src="${vva.img(im.file)}" alt="${vva.esc(im.caption)}">
       ${i === a.images.length - 1 && a.box ? `<div class="box" style="${boxStyle(a.box)}"></div>` : ""}</div><figcaption>${vva.esc(im.caption)}</figcaption></figure>`).join("")
       || '<p class="muted">没有保存截图。</p>'}</div>
@@ -155,6 +167,11 @@ async function showDetail(id) {
       <span style="flex:1"></span>
       <label class="switch"><input type="checkbox" id="add-ref" checked>标为误报时，把截图作为“不算”的例子，下次复核参考</label>
     </div>`}`;
+  $("btn-del").onclick = async () => {
+    if (!confirm(`删除这条“${a.duty_name}”告警？截图和处理经过会一起删除，不能恢复。`)) return;
+    try { await vva.api("DELETE", "/api/alerts/" + a.id); msg("已删除", "ok"); current = 0; load(); }
+    catch (e) { msg("删除失败：" + e.message, "err"); }
+  };
   $("detail").querySelectorAll("[data-a]").forEach(b => b.onclick = async () => {
     const actor = $("actor").value.trim() || "值班员";
     try { localStorage.setItem("vva-actor", actor); } catch (e) {}
@@ -171,6 +188,12 @@ $("f-status").querySelectorAll("button").forEach(b => b.onclick = () => {
   load();
 });
 $("f-duty").onchange = $("f-days").onchange = () => { current = 0; load(); };
+$("btn-del-all").onclick = async () => {
+  if (!listed.length) return;
+  if (!confirm(`删除列表中的 ${listed.length} 条告警？截图和处理经过会一起删除，不能恢复。`)) return;
+  try { const r = await vva.api("POST", "/api/alerts/delete", { ids: listed }); msg(`已删除 ${r.deleted} 条`, "ok"); current = 0; load(); }
+  catch (e) { msg("删除失败：" + e.message, "err"); }
+};
 load();
 setInterval(() => { if (!document.activeElement || !["TEXTAREA", "INPUT"].includes(document.activeElement.tagName)) load(); }, 20000);
 </script>

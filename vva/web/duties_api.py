@@ -16,8 +16,10 @@
   GET  /api/alerts/{id}                  告警详情（含处理经过）
   POST /api/alerts/{id}/action           处理 {"action": "ack|handling|resolve|false|trial_ok", "actor", "note", "add_ref"}
   GET  /api/alerts/image/{path}          告警截图
+  DELETE /api/alerts/{id}                删除一条告警（含截图和处理经过）
+  POST /api/alerts/delete                批量删除 {"ids": [...]}
 
-配置了 web.admin_token 时，职责和岗位的修改需要在请求头 X-Token 中携带；处理告警不需要（值班员操作）。
+配置了 web.admin_token 时，职责和岗位的修改、删除告警需要在请求头 X-Token 中携带；处理告警不需要（值班员操作）。
 """
 from __future__ import annotations
 
@@ -243,6 +245,21 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
         if d is None:
             raise HTTPException(404, "没有这条告警")
         return JSONResponse(d)
+
+    @api.delete("/api/alerts/{alert_id}")
+    async def alert_delete(alert_id: int, request: Request) -> JSONResponse:
+        check(request)
+        if not m.alerts.delete([alert_id]):
+            raise HTTPException(404, "没有这条告警")
+        return JSONResponse({"ok": True, "deleted": 1})
+
+    @api.post("/api/alerts/delete")
+    async def alerts_delete(request: Request, body: dict) -> JSONResponse:
+        check(request)
+        ids = [int(i) for i in body.get("ids") or [] if str(i).isdigit()]
+        if not ids:
+            raise HTTPException(400, "没有选择要删除的告警")
+        return JSONResponse({"ok": True, "deleted": m.alerts.delete(ids)})
 
     @api.post("/api/alerts/{alert_id}/action")
     async def alert_action(alert_id: int, body: dict) -> JSONResponse:

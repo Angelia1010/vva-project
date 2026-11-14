@@ -59,6 +59,13 @@ class AlertService:
         self.bus.publish(TOPIC_UI, {"type": "alert_update", "session": None, "id": alert_id, "alert": alert.to_dict()})
         return alert
 
+    def delete(self, alert_ids: list[int]) -> int:
+        """删除告警（含截图和处理经过），返回删除条数。"""
+        n = sum(self.store.delete(int(i)) for i in alert_ids)
+        if n:
+            self.bus.publish(TOPIC_UI, {"type": "alert_update", "session": None, "deleted": list(alert_ids)})
+        return n
+
     def detail(self, alert_id: int) -> dict[str, Any] | None:
         alert = self.store.get(alert_id)
         if alert is None:

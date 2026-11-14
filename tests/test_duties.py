@@ -134,7 +134,10 @@ def test_alert_actions_and_stats():
     st = m.alerts.stats()
     assert st["today"] == 2 and st["pending"] == 0 and st["false_rate_week"] == 0.5
     assert m.alerts.store.image_path("../ops.db") is None
-    assert m.alerts.store.image_path(detail["images"][0]["file"])
+    img = m.alerts.store.image_path(detail["images"][0]["file"])
+    assert img
+    assert m.alerts.delete([a.id, b.id, 999]) == 2                                 # 删除：记录、处理经过、截图一起删
+    assert m.alerts.store.get(a.id) is None and m.alerts.store.events(a.id) == [] and not os.path.exists(img)
 
 
 # ---------------------------------------------------------------- 巡检、汇报、临时任务
@@ -277,6 +280,9 @@ def test_duty_web_api(tmp_path):
     assert r["status"] == "false" and r["ref_added"] and app.duties.book.get("d1").negatives
     assert c.get(f"/api/alerts/image/{r['images'][0]['file']}").status_code == 200
     assert c.get("/api/alerts/image/../../etc/passwd").status_code == 404
+    assert c.delete(f"/api/alerts/{a.id}").status_code == 401
+    assert c.delete(f"/api/alerts/{a.id}", headers=h).json()["deleted"] == 1
+    assert c.post("/api/alerts/delete", headers=h, json={"ids": []}).status_code == 400
     assert c.put("/api/station", headers=h, json={"name": "1 号仓库门口", "paused": True}).json()["paused"] is True
     assert app.rules.paused and c.delete("/api/duties/d1", headers=h).json()["ok"]
     assert c.get("/duties").status_code == 200 and c.get("/alerts").status_code == 200

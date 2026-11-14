@@ -81,6 +81,22 @@ class AlertStore:
             out.setdefault(r["duty_id"], {})[r["status"]] = r["n"]
         return out
 
+    def delete(self, alert_id: int) -> bool:
+        """删除一条告警及其处理经过、截图。"""
+        alert = self.get(alert_id)
+        if alert is None:
+            return False
+        for im in alert.images:
+            path = self.image_path(im.get("file", ""))
+            if path:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        self.db.execute("DELETE FROM alert_events WHERE alert_id = ?", (alert_id,))
+        self.db.execute("DELETE FROM alerts WHERE id = ?", (alert_id,))
+        return True
+
     # ---------------------------------------------------------------- 处理经过
     def add_event(self, alert_id: int, actor: str, text: str, ts: float | None = None) -> None:
         self.db.execute("INSERT INTO alert_events(alert_id, ts, actor, text) VALUES (?, ?, ?, ?)",
