@@ -34,12 +34,21 @@ class DutyEngine:
     def on_hit(self, duty_id: str, evidence: str, ts: float, jpeg: bytes | None) -> bool:
         duty = self.book.get(duty_id)
         now = time.time()
-        if duty is None or not duty.active(now) or duty_id in self._busy or self.book.cooling(duty_id, now):
+        if duty is None:
+            return False
+        if not duty.active(now):
+            log.info("【%s】命中但不处理：已暂停、已到期或不在生效时间（%s）", duty.name, duty.schedule_text())
+            return False
+        if duty_id in self._busy:
+            return False
+        if self.book.cooling(duty_id, now):
+            log.info("【%s】命中但在冷却期内（%d 分钟内只报一次），不重复通知", duty.name, duty.cooldown_s // 60)
             return False
         if duty.min_duration_s > 0:
             first, last = self._first_hit.get(duty_id, (0.0, 0.0))
             if not first or now - last > max(duty.min_duration_s, self.observe_interval * 3):
                 self._first_hit[duty_id] = (now, now)       # 第一次看到（或中断太久重新计）
+                log.info("【%s】开始计时，持续 %d 秒以上才算", duty.name, duty.min_duration_s)
                 return False
             self._first_hit[duty_id] = (first, now)
             if now - first < duty.min_duration_s:
@@ -61,7 +70,7 @@ class DutyEngine:
             if duty.verify and self.verifier:
                 r = await self.verifier.check(duty, evidence)
                 if not r.ok:
-                    log.info("职责 %s 复核不成立：%s", duty.name, r.evidence)
+                    log.info("【%s】放大复核不成立，不通知：%s", duty.name, r.evidence)
                     self.book.snooze(duty_id, SNOOZE_AFTER_REJECT)
                     self.bus.publish(TOPIC_UI, {"type": "duty_check", "session": None, "duty_id": duty_id, "ok": False,
                                                 "text": f"{duty.name}：复核未确认"})
@@ -86,6 +95,7 @@ class DutyEngine:
         self.alerts.store.add_event(alert.id, "AI 值守员", f"发现：{evidence}" if evidence else "发现")
         if trial:
             self.alerts.store.add_event(alert.id, "系统", "试运行中，只记录不通知")
+            log.info("【%s】命中（试运行，只记录不通知）：%s", duty.name, evidence)
         else:
             self.router.dispatch_alert(alert, duty, lambda text: self.alerts.store.add_event(alert.id, "系统", text))
         self.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})

@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
 from abc import abstractmethod
 from collections import OrderedDict
@@ -61,6 +63,8 @@ class ChatChannel(Channel):
         self._conn = self._conn_key(cfg)
         self._seen: OrderedDict[str, None] = OrderedDict()                 # 去重：平台可能重复推送同一条消息
         self.recent: OrderedDict[str, dict[str, Any]] = OrderedDict()      # 最近发来消息的会话，供配置页一键选用
+        self._recent_file = str(cfg.get("_recent_file") or "")             # 保存到文件，重启后职责里仍能选到这些群
+        self._load_recent()
         self._alert_task: asyncio.Task | None = None
         self._report_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -216,6 +220,30 @@ class ChatChannel(Channel):
                                   "text": (m.text or f"[{m.msg_type}]")[:40], "time": time.strftime("%m-%d %H:%M")}
         while len(self.recent) > 20:
             self.recent.popitem(last=False)
+        self._save_recent()
+
+    def _load_recent(self) -> None:
+        if not self._recent_file:
+            return
+        try:
+            with open(self._recent_file, encoding="utf-8") as f:
+                for r in json.load(f):
+                    if isinstance(r, dict) and r.get("chat_id"):
+                        self.recent[r["chat_id"]] = r
+        except (OSError, ValueError):
+            pass
+
+    def _save_recent(self) -> None:
+        if not self._recent_file:
+            return
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self._recent_file)), exist_ok=True)
+            tmp = self._recent_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(list(self.recent.values()), f, ensure_ascii=False)
+            os.replace(tmp, self._recent_file)
+        except OSError as e:
+            log.warning("保存最近会话失败：%s", e)
 
     async def handle_event(self, raw: dict[str, Any]) -> None:
         m = self.parse(raw)
@@ -336,6 +364,7 @@ class ChatChannel(Channel):
                 await self.send_alert(chat, condition, evidence, time_text, image)
                 self.host.add_note(f"{self.name}:{chat}", f"[{time_text}] 提醒：{condition}。{evidence}")
                 self._report_result(alert, chat, True)
+                log.info("已推送%s告警到 %s：%s", self.label, chat, condition)
             except Exception as e:
                 log.warning("推送%s告警到 %s 失败：%s", self.label, chat, e)
                 self._report_result(alert, chat, False, str(e))

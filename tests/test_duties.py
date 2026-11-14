@@ -294,3 +294,22 @@ def test_duty_changes_refresh_agent_context(tmp_path):
     assert notes == [f"{app.DUTY_NOTE}现在长期职责 4 项：职责2、职责3、职责4、职责5；没有临时任务。"]   # 只保留最新一条
     system = app.agent._system()["content"]
     assert "长期职责 4 项" in system and "职责0" not in system and "以这里为准" in system
+
+
+def test_observer_matches_rule_by_name_and_recent_chats_persist(tmp_path):
+    from tests.test_channels import FakeAPI, FakeHost, FakeReceiver
+    from vva.channels.dingtalk.channel import DingTalkChannel
+    from vva.perception.observer import Observer
+    from vva.perception.timeline import Timeline
+    m = make_duties()
+    d = m.book.create(name="玩手机", condition="画面中有人低头玩手机")
+    obs = Observer(FrameBuffer(), FakeVLM(), Timeline(), m.book, EventBus())
+    assert obs._match_rule(d.id) is d and obs._match_rule("玩手机") is d and obs._match_rule("“画面中有人低头玩手机”") is d
+    assert obs._match_rule("没有这个") is None
+    path = str(tmp_path / "dingtalk.recent.json")
+    ch = DingTalkChannel({"client_id": "a", "client_secret": "b", "_recent_file": path}, FakeHost(), api=FakeAPI(), receiver=FakeReceiver())
+    ch._remember_chat(__import__("vva.channels.dingtalk.message", fromlist=["parse_message"]).parse_message(
+        {"msgId": "m1", "conversationId": "cidG", "conversationType": "2", "senderStaffId": "u1", "msgtype": "text",
+         "text": {"content": "hi"}, "conversationTitle": "安全群"}))
+    ch2 = DingTalkChannel({"client_id": "a", "client_secret": "b", "_recent_file": path}, FakeHost(), api=FakeAPI(), receiver=FakeReceiver())
+    assert list(ch2.recent) == ["cidG"] and ch2.recent["cidG"]["title"] == "安全群"

@@ -94,7 +94,8 @@
       </div>`}
       ${s.kind !== "report" ? `<div><span class="lbl">级别</span>${seg("level", LEVELS, s.level)}</div>` : ""}
       <div><span class="lbl">${s.kind === "report" ? "发给谁" : "发现后通知谁"}</span>${chipList("targets", targets, s.targets || [])}
-        <p class="muted" style="margin:6px 0 0;font-size:12px">钉钉、飞书的群要先在“设置”里接入，机器人进群后发过消息才会出现在这里。</p></div>
+        ${targets.some(t => t.id === "default" || t.id.includes(":")) ? `<p class="muted" style="margin:6px 0 0;font-size:12px">要推到钉钉 / 飞书，记得选上对应的群；只选“值守台”时只在网页上提醒。</p>`
+          : `<div class="hintbox" style="margin-top:8px">还没有可选的钉钉 / 飞书群，所以现在只能在值守台提醒。先在“设置 → 钉钉”接入，把机器人拉进群并 @它 说一句话，回到这里刷新就能选到这个群。</div>`}</div>
       ${s.kind === "watch" ? `<div class="box">
         <label class="switch"><input type="checkbox" id="dd-verify" ${s.verify ? "checked" : ""}>放大复核后再通知</label>
         <label class="switch"><input type="checkbox" id="dd-trial" ${s.mode === "trial" ? "checked" : ""}>试运行（只记录不通知）</label>

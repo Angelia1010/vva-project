@@ -73,6 +73,24 @@ class Observer:
         idle_limit = min(self.max_idle, self.rule_check_interval) if self._watching() else self.max_idle
         return diff >= self.change_threshold or now - self._last_described >= idle_limit, sig
 
+    def _match_rule(self, key: str) -> Any:
+        """按编号找规则；模型有时返回名称或条件原文，也要能对上。"""
+        key = key.strip().strip("“”\"' ")
+        if not key:
+            return None
+        rule = self.rules.get(key)
+        if rule is not None:
+            return rule
+        watching = self._watching()
+        for r in watching:
+            if key in (getattr(r, "name", ""), r.condition):
+                return r
+        for r in watching:
+            name = getattr(r, "name", "")
+            if (name and (name in key or key in name)) or (len(key) >= 4 and key in r.condition):
+                return r
+        return None
+
     def _watching(self) -> list[Any]:
         active = getattr(self.rules, "active", None)
         return list(active()) if callable(active) else self.rules.list()
@@ -140,10 +158,14 @@ class Observer:
         for hit in data.get("triggered_rules") or []:
             rid = hit.get("id") if isinstance(hit, dict) else str(hit)
             evidence = hit.get("evidence", "") if isinstance(hit, dict) else ""
-            rule = self.rules.get(str(rid))
-            if rule and self.on_hit:
+            rule = self._match_rule(str(rid or ""))
+            if rule is None:
+                log.info("后台观察返回了未知的规则：%s（%s）", rid, evidence)
+                continue
+            log.info("疑似命中【%s】：%s", getattr(rule, "name", rule.condition), evidence)
+            if self.on_hit:
                 self.on_hit(rule.id, evidence, frame.ts, jpeg)
-            elif rule and self.rules.mark_triggered(rule.id, now):
+            elif self.rules.mark_triggered(rule.id, now):
                 self.bus.publish(TOPIC_ALERT, {"rule_id": rule.id, "condition": rule.condition,
                                                "evidence": evidence, "ts": frame.ts})
         return entry

@@ -77,6 +77,7 @@ class ChannelManager:
         if not spec:
             log.error("未知的接入入口：%s（自定义入口需配置 class）", name)
             return None
+        cfg = {**cfg, "_recent_file": os.path.join(self.settings.root, f"{name}.recent.json")}
         try:
             return load_class(spec)(cfg, self.host)
         except Exception as e:

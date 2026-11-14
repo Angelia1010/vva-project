@@ -197,7 +197,8 @@ class App:
             recent = {r["chat_id"]: r for r in (ch.status().get("recent", []) if ch and hasattr(ch, "status") else [])}
             chats = list(dict.fromkeys([*(cfg.get("alert_chats") or []), *(cfg.get("report_chats") or []),
                                         *(c for c, r in recent.items() if r.get("chat_type") == "group")]))
-            for chat in chats:
+            used = [t.split(":", 1)[1] for d in self.rules.list() for t in d.targets if t.startswith(name + ":")]
+            for chat in dict.fromkeys([*chats, *used]):
                 title = (recent.get(chat) or {}).get("title") or ""
                 opts.append({"id": f"{name}:{chat}", "label": f"{label}·{title or chat[:12]}"})
         return opts
