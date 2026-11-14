@@ -232,6 +232,10 @@ def create_web_app(app: App) -> FastAPI:
     from vva.web.duties_api import register_duty_routes
     register_duty_routes(api, app, web_cfg.get("admin_token") or "", STATIC_DIR)
 
+    # ------------------------------------------------------------ 执行（带编号的现场动作）
+    from vva.web.actions_api import register_action_routes
+    register_action_routes(api, app, web_cfg.get("admin_token") or "", STATIC_DIR)
+
     # ------------------------------------------------------------ 飞书等接入入口的配置
     from vva.web.channels_api import register_channel_routes
     register_channel_routes(api, app.channels, web_cfg.get("admin_token") or "", STATIC_DIR)

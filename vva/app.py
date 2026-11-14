@@ -68,6 +68,10 @@ class App:
         self.duties = DutyManager(cfg["duties"], self.ops_db, self.bus, self.buffer, self.vlm, self.llm,
                                   report=self.report, scene=self.scene_text, station_name=lambda: self.station.station.name,
                                   observe_interval=cfg["observer"].get("rule_check_interval", 8.0))
+        from vva.actions import ActionService
+        self.actions = ActionService(self.ops_db, self.bus, shots_dir=cfg.get("actions", {}).get("dir", "data/actions"),
+                                     speak=self._say_on_site, notify=self.send_notice, snapshot=self.snapshot,
+                                     station_name=lambda: self.station.station.name, problem=self._action_problem)
         self.rules = self.duties.book           # 职责清单兼容旧的监控规则接口（后台观察、技能使用）
         self.rules.paused = self.station.station.paused
         vision_tools = VisionTools(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
@@ -104,7 +108,7 @@ class App:
             self.skills.apply_rules(self.rules)
             self.skills.on_change(lambda: self.skills.apply_rules(self.rules))   # 网页上新增的规则模板立即生效
             self.duties.verifier.references = self.skills.references_for_text
-        self.tools = ToolSet(vision_tools, self.duties.tools, self.memory.tools if self.memory else None, skill_tools,
+        self.tools = ToolSet(vision_tools, self.duties.tools, self.actions.tools, self.memory.tools if self.memory else None, skill_tools,
                              self.knowledge.tools if self.knowledge else None)
         self.agent = Agent(self.llm, self.tools, **cfg["agent"],
                            notes_provider=self.memory.tools.note_lines if self.memory else None)
@@ -180,7 +184,7 @@ class App:
     def _extra_prompt(self) -> str:
         st = self.station.station
         block = f"\n## 岗位\n{st.prompt_block()}\n" + (f"岗位负责人：{st.owner}\n" if st.owner else "")
-        return block + self.duties.prompt_block() + (self.skills.prompt_block() if self.skills else "")
+        return block + self.duties.prompt_block() + self.actions.prompt_block() + (self.skills.prompt_block() if self.skills else "")
 
     def notify_targets(self) -> list[dict[str, str]]:
         """可选的通知对象：值守台、现场播报、各入口的默认告警群和最近发过消息的群。"""
@@ -202,6 +206,40 @@ class App:
                 title = (recent.get(chat) or {}).get("title") or ""
                 opts.append({"id": f"{name}:{chat}", "label": f"{label}·{title or chat[:12]}"})
         return opts
+
+    # ---------------------------------------------------------------- 执行动作用到的现场能力
+    def _say_on_site(self, text: str) -> None:
+        if self.voice is None:
+            raise RuntimeError("现场播报未开启")
+        self.voice.say(text)
+
+    def _action_problem(self, kind: str) -> str:
+        if kind == "speaker":
+            return "" if self.voice is not None else "现场播报未开启"
+        if kind == "notify":
+            enabled = [n for n in self.channels.names() if self.channels.config(n).get("enabled")]
+            if not enabled:
+                return "钉钉/飞书未开启"
+            if not any(self.channels.config(n).get("alert_chats") for n in enabled):
+                return "没有设置默认告警群"
+        return ""
+
+    async def send_notice(self, title: str, text: str) -> list[str]:
+        """给各入口的默认告警群发一条通知，返回发到了哪里；一个都没发出去则抛异常。"""
+        labels, sent, errors = {"dingtalk": "钉钉", "feishu": "飞书"}, [], []
+        for name in self.channels.names():
+            cfg, ch = self.channels.config(name), self.channels.get(name)
+            if not cfg.get("enabled") or ch is None:
+                continue
+            for chat in cfg.get("alert_chats") or []:
+                try:
+                    await ch.send_report_to(chat, title, text)
+                    sent.append(f"{labels.get(name, name)}告警群")
+                except Exception as e:
+                    errors.append(f"{labels.get(name, name)}：{e}")
+        if not sent:
+            raise RuntimeError("；".join(errors) or "没有设置默认告警群")
+        return list(dict.fromkeys(sent))
 
     def target_problem(self, target: str) -> str:
         """通知对象发不出去的原因；没问题返回空串。"""

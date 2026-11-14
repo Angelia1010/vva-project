@@ -334,3 +334,76 @@ def test_duty_card_action_and_period_text():
     assert a["action_text"] == "发钉钉·安全群、现场喇叭播报" and a["period_text"] == "工作日 08:00-18:00"
     assert b["action_text"] == "未设置推送" and b["period_text"] == "截止到明天 18:00"
     assert "处置：发钉钉·安全群" in m.prompt_block()
+
+
+# ---------------------------------------------------------------- 执行（带编号的动作）
+def make_actions(**kw):
+    from vva.actions import ActionService
+    from vva.core.bus import EventBus
+    from vva.core.sqlite import SqliteDB
+    said, calls = [], []
+
+    async def notify(title, text):
+        return ["钉钉告警群"]
+
+    def http(url, method, payload, headers, timeout):
+        calls.append((url, method, payload))
+        return "设备已响应（200）"
+    import tempfile
+    s = ActionService(SqliteDB(":memory:"), EventBus(), shots_dir=tempfile.mkdtemp(), speak=said.append, notify=notify,
+                      snapshot=lambda: b"jpeg", station_name=lambda: "一号仓", http=http, **kw)
+    return s, said, calls
+
+
+def test_actions_seeded_with_codes_and_readiness():
+    s, _, _ = make_actions()
+    items = {a["code"]: a for a in s.list()}
+    assert items[1]["name"] == "现场喇叭喊话" and items[1]["ready"]
+    assert items[8]["danger"] and not items[8]["ready"] and "未接入" in items[8]["problem"]
+    assert s.find("3号").code == 3 and s.find("03").code == 3 and s.find("抓拍").code == 3
+    assert "3 号 抓拍存证" in s.prompt_block()
+
+
+def test_action_run_speaker_snapshot_and_log():
+    s, said, _ = make_actions()
+    r = asyncio.run(s.run(1, text="请离开"))
+    assert r["ok"] and said == ["请离开"]
+    r = asyncio.run(s.run("3"))
+    assert r["ok"] and s.shot_path(s.store.runs(1)[0]["image"])
+    r = asyncio.run(s.run(4))
+    assert not r["ok"] and "未接入" in r["error"]
+    assert [x["ok"] for x in s.store.runs(3)] == [False, True, True]
+    assert not asyncio.run(s.run(99))["ok"]
+
+
+def test_action_webhook_and_deleted_seed_stays_deleted():
+    s, _, calls = make_actions()
+    s.update(4, {"config": {"url": "http://gw.local/alarm", "body": {"relay": 2}}})
+    r = asyncio.run(s.run(4))
+    assert r["ok"] and calls[0][0] == "http://gw.local/alarm" and calls[0][2]["relay"] == 2 and calls[0][2]["code"] == 4
+    s.store.remove(6)
+    from vva.actions import ActionStore
+    assert ActionStore(s.store.db).get(6) is None
+    assert s.create({"name": "加速"}).code == 6
+
+
+def test_danger_action_needs_confirm_in_a_later_turn():
+    from vva.core import turn
+    s, _, calls = make_actions()
+    s.update(8, {"config": {"url": "http://gw.local/power"}})
+
+    async def call(**kw):
+        turn.begin("web")
+        return await s.tools.tool_run_action(**kw)
+    r = asyncio.run(call(code="8", confirm=True))          # 模型一上来就带 confirm 也不放行
+    assert r.get("need_confirm") and not calls
+
+    async def same_turn():
+        turn.begin("web")
+        await s.tools.tool_run_action(code="8")
+        return await s.tools.tool_run_action(code="8", confirm=True)   # 同一轮里自问自答不算
+    assert asyncio.run(same_turn()).get("need_confirm") and not calls
+    r = asyncio.run(call(code="8", confirm=True))          # 用户下一句确认
+    assert r["ok"] and len(calls) == 1
+    r = asyncio.run(call(code="1"))                         # 普通动作直接执行
+    assert r["ok"]

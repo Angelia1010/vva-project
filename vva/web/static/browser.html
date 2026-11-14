@@ -92,7 +92,7 @@
   .msg.sys { align-self: stretch; background: rgba(255,107,94,.08); color: #FFC2BB; border: 1px solid rgba(255,107,94,.25); font-size: 13px; }
   .msg .src { font-size: 11px; opacity: .75; margin-bottom: 2px; }
   .tool { align-self: flex-start; font-size: 12px; color: var(--ink-2); padding-left: 2px; }
-  #chat:empty::before { content: "试试问：你负责哪些事？\A门口现在有几个人？\A上午 9 点左右发生了什么？\A有快递到门口就告诉我。"; white-space: pre-line; font-size: 13px;
+  #chat:empty::before { content: "试试说：你负责哪些事？\A有快递到门口就告诉我。\A执行 3 号。"; white-space: pre-line; font-size: 13px;
     margin: auto 0; padding: 0 10%; text-align: center; color: var(--ink-2); line-height: 1.9; }
   .voice { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: var(--bar); border: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
   .voice.on { background: rgba(69,200,245,.08); border-color: rgba(69,200,245,.35); color: #7FD8F7; }
@@ -165,6 +165,7 @@
     <a href="/browser" aria-current="page">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts">告警</a>
+    <a href="/actions">执行</a>
     <a href="/skills">技能</a>
     <a href="/knowledge">知识库</a>
     <a href="/settings">设置</a>
@@ -283,7 +284,8 @@ function addMsg(cls, text, src) {
 const TOOL_NAMES = {look_now: "看当前画面", locate: "定位目标", look_back: "回看", look_sequence: "看一段时间",
   search_timeline: "查时间线", search_memory: "查记录", look_at_time: "看当时的画面", list_duties: "查看职责",
   add_task: "添加临时任务", remove_task: "取消临时任务", pause_duty: "暂停职责", resume_duty: "恢复职责",
-  query_alerts: "查告警", ask_knowledge: "查知识库", remember_note: "记下备忘", forget_note: "删除备忘"};
+  query_alerts: "查告警", ask_knowledge: "查知识库", remember_note: "记下备忘", forget_note: "删除备忘",
+  list_actions: "查看可执行的动作", run_action: "执行动作"};
 function addTool(name, args) {
   const d = document.createElement("div"); d.className = "tool";
   const brief = Object.values(args || {}).filter(v => typeof v === "string").join("，").slice(0, 40);
@@ -419,6 +421,7 @@ function handle(ev) {
     case "tool": addTool(ev.name, ev.args); botMsg = null; break;
     case "timeline": addTimeline(ev); break;
     case "alert": addMsg("sys", ev.text); break;
+    case "action": addMsg("sys", `${ev.ok ? "已执行" : "执行失败"} ${String(ev.code).padStart(2, "0")} 号 ${ev.name}：${ev.detail}`); break;
     case "alert_new":
       if (ev.alert && ev.alert.box && ev.alert.status !== "record") showBoxes([{ box: ev.alert.box, label: ev.alert.duty_name, alert: true }]);
       refreshSoon(); break;

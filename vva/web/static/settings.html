@@ -10,11 +10,11 @@
   .form { min-width: 0; }
   .side { display: flex; flex-direction: column; gap: 16px; }
   @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
-  .link { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid #1E3150; text-decoration: none; color: var(--ink); }
-  .link:hover { border-color: var(--cyan); color: var(--ink); }
-  .link b { display: block; }
-  .link span { color: var(--ink-2); font-size: 12px; }
-  .link .st { margin-left: auto; font-size: 12px; }
+  .entry { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid #1E3150; text-decoration: none; color: var(--ink); }
+  .entry:hover { border-color: var(--cyan); color: var(--ink); }
+  .entry b { display: block; }
+  .entry span { color: var(--ink-2); font-size: 12px; }
+  .entry .st { margin-left: auto; font-size: 12px; }
   .savebar { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
 </style>
 </head>
@@ -25,6 +25,7 @@
     <a href="/browser">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts">告警</a>
+    <a href="/actions">执行</a>
     <a href="/skills">技能</a>
     <a href="/knowledge">知识库</a>
     <a href="/settings" aria-current="page">设置</a>
@@ -57,15 +58,15 @@
       <section class="panel" aria-labelledby="t-channels">
         <h2 id="t-channels">通知渠道</h2>
         <div style="display:flex;flex-direction:column;gap:10px">
-          <a class="link" href="/dingtalk"><div><b>钉钉</b><span>群里 @机器人 下指令，告警推送到钉钉群</span></div><span class="st" id="st-dingtalk"></span></a>
-          <a class="link" href="/feishu"><div><b>飞书</b><span>群里 @机器人 下指令，告警推送到飞书群</span></div><span class="st" id="st-feishu"></span></a>
+          <a class="entry" href="/dingtalk"><div><b>钉钉</b><span>群里 @机器人 下指令，告警推送到钉钉群</span></div><span class="st" id="st-dingtalk"></span></a>
+          <a class="entry" href="/feishu"><div><b>飞书</b><span>群里 @机器人 下指令，告警推送到飞书群</span></div><span class="st" id="st-feishu"></span></a>
         </div>
       </section>
       <section class="panel" aria-labelledby="t-more">
         <h2 id="t-more">识别与知识</h2>
         <div style="display:flex;flex-direction:column;gap:10px">
-          <a class="link" href="/skills"><div><b>技能</b><span>特定目标的参考图、热词、现场概况</span></div></a>
-          <a class="link" href="/knowledge"><div><b>知识库</b><span>规章、规程、设备手册</span></div></a>
+          <a class="entry" href="/skills"><div><b>技能</b><span>特定目标的参考图、热词、现场概况</span></div></a>
+          <a class="entry" href="/knowledge"><div><b>知识库</b><span>规章、规程、设备手册</span></div></a>
         </div>
       </section>
     </aside>

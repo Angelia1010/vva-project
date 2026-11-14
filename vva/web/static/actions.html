@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>执行 - AI 值守台</title>
+<link rel="stylesheet" href="/static/console.css">
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+  @media (max-width: 1400px) { .layout { grid-template-columns: minmax(0, 1fr) 280px; } }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .main { min-width: 0; padding: 0; display: flex; flex-direction: column; }
+  body.app .page > .layout > .main { overflow: hidden; }
+  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+  .howto { font-size: 13px; color: var(--ink-2); }
+  .howto q { quotes: none; color: #BDEBFB; background: var(--steel-soft); padding: 2px 8px; border-radius: 4px; margin: 0 2px; }
+  .cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px; display: grid; gap: 12px;
+           grid-template-columns: repeat(auto-fill, minmax(264px, 1fr)); align-content: start; }
+
+  /* 动作卡片：编号是主角，值班员靠它下指令 */
+  .act { display: grid; grid-template-columns: 58px minmax(0, 1fr); column-gap: 12px; padding: 14px 14px 12px; border-radius: 10px;
+         background: var(--panel-2); border: 1px solid #1E3150; }
+  .act:hover { border-color: #33527D; }
+  .act .no { grid-row: 1 / span 2; font: 600 40px/1 var(--digits); font-variant-numeric: tabular-nums; color: var(--cyan); letter-spacing: -.01em; padding-top: 2px; }
+  .act.danger .no { color: var(--alert-soft); }
+  .act.off .no { color: #4E6182; }
+  .act h3 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .act .what { margin: 4px 0 0; font-size: 13px; color: var(--ink-2); min-height: 42px; }
+  .act .meta { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #1E3150; font-size: 12px; color: var(--ink-2); min-width: 0; }
+  .act .meta .state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .act .meta .state.ok { color: #7BE6B1; } .act .meta .state.no-go { color: #F5D08A; }
+  .act .meta .last { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .act .meta .last.fail { color: var(--alert-soft); }
+  .act .ops { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+  .act .ops .run { min-width: 76px; }
+  .act .ops .spacer { flex: 1; }
+  .act .ops button.link { text-decoration: none; }
+  .act .ops button.link:hover { text-decoration: underline; }
+
+  .side h2 { display: flex; align-items: baseline; gap: 8px; }
+  .run-item { padding: 10px 0; border-bottom: 1px solid #1A2A42; }
+  .run-item:last-child { border-bottom: 0; }
+  .run-item .l1 { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
+  .run-item .l1 .n { font: 600 14px var(--digits); color: var(--cyan); }
+  .run-item .l1 .time { margin-left: auto; }
+  .run-item .l2 { font-size: 12px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+  .run-item.fail .l2 b { color: var(--alert-soft); font-weight: 500; }
+  .run-item .l2 b { color: #7BE6B1; font-weight: 500; }
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-3); grid-column: 1 / -1; }
+
+  dialog { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); }
+  dialog::backdrop { background: rgba(4, 9, 18, .66); }
+  dialog h2 { margin: 0; padding: 16px 20px; font-size: 16px; border-bottom: 1px solid var(--rule); }
+  dialog .body { padding: 6px 20px 16px; max-height: min(64vh, 560px); overflow-y: auto; }
+  dialog .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding: 14px 20px; border-top: 1px solid var(--rule); background: var(--bar); border-radius: 0 0 12px 12px; }
+  dialog .foot .toast { margin-right: auto; }
+  dialog .two { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; }
+  dialog .switches { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; }
+  dialog p.say { margin: 14px 0 4px; font-size: 15px; line-height: 1.7; }
+  dialog p.warn { margin: 8px 0 0; font-size: 13px; color: #F5D08A; }
+  select.field { min-height: 38px; }
+</style>
+</head>
+<body class="app">
+<header class="duty">
+  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <nav aria-label="页面">
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
+    <a href="/actions" aria-current="page">执行</a>
+    <a href="/skills">技能</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/settings">设置</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>执行</h1>
+      <p>AI 值守员能动手做的事。每个动作有一个编号，对值守台说出编号就会执行；高风险动作会先向你确认。</p>
+    </div>
+    <span class="spacer"></span>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+
+  <div class="layout">
+    <section class="panel main" aria-label="动作清单">
+      <div class="toolbar">
+        <span class="howto">对值守台说 <q>执行 3 号</q> 或 <q>3 号</q>，也可以在钉钉、飞书群里 @机器人 发送</span>
+        <span style="flex:1"></span>
+        <button type="button" class="primary" id="btn-add">添加动作</button>
+      </div>
+      <div class="cards" id="cards"></div>
+    </section>
+    <aside class="panel side" aria-label="执行记录">
+      <h2>执行记录 <span class="sub" id="run-count"></span></h2>
+      <div id="runs"></div>
+    </aside>
+  </div>
+</div>
+
+<dialog id="run-dlg" aria-labelledby="run-title">
+  <h2 id="run-title"></h2>
+  <div class="body">
+    <p class="say" id="run-say"></p>
+    <div id="run-text-box"><label class="field" for="run-text">这次要说的内容 <span class="muted">不改就用预设的</span></label><textarea id="run-text"></textarea></div>
+    <p class="warn" id="run-warn"></p>
+  </div>
+  <div class="foot"><button type="button" id="run-cancel">取消</button><button type="button" class="primary" id="run-ok">执行</button></div>
+</dialog>
+
+<dialog id="edit-dlg" aria-labelledby="edit-title">
+  <h2 id="edit-title"></h2>
+  <div class="body">
+    <div class="two">
+      <div><label class="field" for="f-code">编号</label><input id="f-code" type="number" min="1" max="999"></div>
+      <div><label class="field" for="f-name">名称</label><input id="f-name" type="text" maxlength="20" placeholder="如：声光报警"></div>
+    </div>
+    <label class="field" for="f-summary">做什么 <span class="muted">一句话，值守员据此判断什么时候用</span></label>
+    <input id="f-summary" type="text" maxlength="80" placeholder="如：打开现场的声光报警器">
+    <label class="field" for="f-kind">怎么执行</label>
+    <select id="f-kind" class="field"></select>
+    <div id="box-text"><label class="field" for="f-text">预设内容 <span class="muted">执行时也可以临时指定</span></label><textarea id="f-text" maxlength="200"></textarea></div>
+    <div id="box-hook">
+      <label class="field" for="f-url">设备接口地址 <span class="muted">现场网关或继电器的 HTTP 地址，不填显示“未接入”</span></label>
+      <input id="f-url" type="text" placeholder="http://192.168.1.50/relay/on">
+      <div class="two">
+        <div><label class="field" for="f-method">请求方式</label><select id="f-method" class="field"><option>POST</option><option>GET</option></select></div>
+        <div><label class="field" for="f-body">附加参数 <span class="muted">JSON，可不填</span></label><input id="f-body" type="text" placeholder='{"relay": 2}'></div>
+      </div>
+      <p class="sub" style="margin:8px 0 0">执行时会把编号、名称、岗位和时间一起发给这个地址。</p>
+    </div>
+    <div class="switches">
+      <label class="switch"><input type="checkbox" id="f-danger">高风险，执行前要确认</label>
+      <label class="switch"><input type="checkbox" id="f-enabled">启用</label>
+    </div>
+  </div>
+  <div class="foot"><span class="toast err" id="edit-err" role="alert"></span><button type="button" id="edit-cancel">取消</button><button type="button" class="primary" id="edit-ok">保存</button></div>
+</dialog>
+
+<script src="/static/console.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let all = [], kinds = {}, nextCode = 1, running = null, editing = null, msgTimer = null;
+function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 6000); }
+const needsText = (k) => k === "speaker" || k === "notify";
+
+async function load() {
+  let d;
+  try { d = await vva.api("GET", "/api/actions"); } catch (e) { msg(e.message, "err"); return; }
+  all = d.actions; kinds = d.kinds; nextCode = d.next_code;
+  $("f-kind").innerHTML = Object.entries(kinds).map(([k, v]) => `<option value="${k}">${vva.esc(v)}</option>`).join("");
+  const cards = $("cards"); cards.innerHTML = "";
+  if (!all.length) cards.innerHTML = '<p class="empty">还没有动作。点右上角“添加动作”配置第一个。</p>';
+  all.forEach(a => cards.appendChild(card(a)));
+  $("run-count").textContent = d.runs.length ? `最近 ${d.runs.length} 次` : "";
+  $("runs").innerHTML = d.runs.length ? d.runs.map(r => `<div class="run-item ${r.ok ? "" : "fail"}">
+      <div class="l1"><span class="n">${String(r.code).padStart(2, "0")}</span><span>${vva.esc(r.name)}</span><span class="time">${vva.esc(r.time.slice(-8, -3))}</span></div>
+      <div class="l2"><b>${r.ok ? "成功" : "失败"}</b> · ${vva.esc(r.detail)}${r.image ? ` · <a href="/api/actions/shot/${encodeURIComponent(r.image)}" target="_blank" rel="noopener">看图</a>` : ""}<br>${vva.esc(r.actor)} · ${vva.esc(r.time.slice(0, 5))}</div></div>`).join("")
+    : '<p class="sub">还没有执行过。</p>';
+}
+
+function card(a) {
+  const el = document.createElement("article");
+  el.className = "act" + (a.danger ? " danger" : "") + (a.ready ? "" : " off");
+  const state = a.ready ? '<span class="state ok"><span class="dot running" aria-hidden="true"></span>可执行</span>'
+                        : `<span class="state no-go"><span class="dot" aria-hidden="true"></span>${vva.esc(a.problem)}</span>`;
+  const last = a.last ? `<span class="last ${a.last.ok ? "" : "fail"}" title="${vva.esc(a.last.detail)}">上次 ${vva.esc(a.last.time.slice(0, -3))} ${a.last.ok ? "成功" : "失败"}</span>` : '<span class="last">还没执行过</span>';
+  el.innerHTML = `<div class="no" aria-label="编号 ${a.code}">${a.code_text}</div>
+    <h3>${vva.esc(a.name)}${a.danger ? '<span class="tag urgent">需确认</span>' : ""}</h3>
+    <p class="what">${vva.esc(a.summary || a.kind_label)}</p>
+    <div class="meta"><span class="tag">${vva.esc(a.kind_label)}</span>${state}${last}</div>
+    <div class="ops"><button type="button" class="run ${a.ready ? "primary" : ""}" data-a="run">执行</button><span class="spacer"></span>
+      <button type="button" class="link" data-a="edit">${a.ready || a.kind !== "webhook" ? "编辑" : "去接入"}</button><button type="button" class="link danger" data-a="del">删除</button></div>`;
+  el.querySelector('[data-a="run"]').onclick = () => askRun(a);
+  el.querySelector('[data-a="edit"]').onclick = () => openEdit(a);
+  el.querySelector('[data-a="del"]').onclick = async () => {
+    if (!confirm(`删除 ${a.code_text} 号“${a.name}”？删除后说这个编号不会再执行。`)) return;
+    try { await vva.api("DELETE", "/api/actions/" + a.code); msg("已删除", "ok"); load(); } catch (e) { msg(e.message, "err"); }
+  };
+  return el;
+}
+
+// ---------------- 执行
+function askRun(a) {
+  if (!a.ready) { msg(`${a.code_text} 号“${a.name}”现在执行不了：${a.problem}`, "err"); if (a.kind === "webhook" && a.enabled) openEdit(a); return; }
+  if (!a.danger && !needsText(a.kind)) return doRun(a, "");
+  running = a;
+  $("run-title").textContent = `${a.code_text} 号 · ${a.name}`;
+  $("run-say").textContent = a.danger ? `确认执行“${a.name}”吗？` : a.summary;
+  $("run-text-box").style.display = needsText(a.kind) ? "" : "none";
+  $("run-text").value = a.config.text || "";
+  $("run-warn").textContent = a.danger ? `${a.summary}。这个动作会直接作用到现场，请确认现场情况后再执行。` : "";
+  $("run-ok").textContent = a.danger ? "确认执行" : "执行";
+  $("run-ok").className = a.danger ? "danger" : "primary";
+  $("run-dlg").showModal();
+}
+async function doRun(a, text) {
+  msg(`正在执行 ${a.code_text} 号…`);
+  try {
+    const r = await vva.api("POST", `/api/actions/${a.code}/run`, { text, confirm: true, actor: localStorage.getItem("vva-actor") || "值班员" });
+    msg(`${a.code_text} 号 ${a.name}：${r.ok ? r.detail : "失败，" + (r.error || r.detail)}`, r.ok ? "ok" : "err");
+  } catch (e) { msg(e.message, "err"); }
+  load();
+}
+$("run-cancel").onclick = () => $("run-dlg").close();
+$("run-ok").onclick = () => { const a = running; $("run-dlg").close(); if (a) doRun(a, needsText(a.kind) ? $("run-text").value.trim() : ""); };
+
+// ---------------- 新增 / 编辑
+function syncKind() {
+  const k = $("f-kind").value;
+  $("box-text").style.display = needsText(k) ? "" : "none";
+  $("box-hook").style.display = k === "webhook" ? "" : "none";
+}
+function openEdit(a) {
+  editing = a;
+  $("edit-title").textContent = a ? `编辑 ${a.code_text} 号` : "添加动作";
+  $("f-code").value = a ? a.code : nextCode; $("f-code").disabled = !!a;
+  $("f-name").value = a ? a.name : ""; $("f-summary").value = a ? a.summary : "";
+  $("f-kind").value = a ? a.kind : "webhook";
+  const c = a ? a.config : {};
+  $("f-text").value = c.text || ""; $("f-url").value = c.url || ""; $("f-method").value = c.method || "POST";
+  $("f-body").value = c.body ? JSON.stringify(c.body) : "";
+  $("f-danger").checked = a ? a.danger : false; $("f-enabled").checked = a ? a.enabled : true;
+  $("edit-err").textContent = ""; syncKind();
+  $("edit-dlg").showModal();
+}
+$("f-kind").onchange = syncKind;
+$("btn-add").onclick = () => openEdit(null);
+$("edit-cancel").onclick = () => $("edit-dlg").close();
+$("edit-ok").onclick = async () => {
+  const kind = $("f-kind").value, config = {};
+  if (needsText(kind)) config.text = $("f-text").value.trim();
+  if (kind === "webhook") {
+    config.url = $("f-url").value.trim(); config.method = $("f-method").value;
+    const raw = $("f-body").value.trim();
+    if (raw) { try { config.body = JSON.parse(raw); } catch (e) { $("edit-err").textContent = "附加参数不是合法的 JSON"; return; } }
+  }
+  const body = { name: $("f-name").value.trim(), summary: $("f-summary").value.trim(), kind, config, danger: $("f-danger").checked, enabled: $("f-enabled").checked };
+  if (!editing) body.code = $("f-code").value;
+  try {
+    await (editing ? vva.api("PUT", "/api/actions/" + editing.code, body) : vva.api("POST", "/api/actions", body));
+    $("edit-dlg").close(); msg("已保存", "ok"); load();
+  } catch (e) { $("edit-err").textContent = e.message; }
+};
+
+load();
+setInterval(() => { if (!$("run-dlg").open && !$("edit-dlg").open) load(); }, 15000);
+</script>
+</body>
+</html>
