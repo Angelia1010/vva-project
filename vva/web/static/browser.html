@@ -81,8 +81,10 @@
   .command .head { display: flex; align-items: center; gap: 8px; }
   .command .head h2 { margin: 0; font-size: 15px; }
   .command .head { gap: 4px; }
-  button.mini { min-height: 0; height: 24px; padding: 0 8px; font-size: 12px; border: 0; background: transparent; color: var(--ink-2); border-radius: 4px; }
-  button.mini:hover { background: var(--panel-2); color: var(--ink); }
+  /* 和“告警中心”一样的链接样式：蓝字、下划线 */
+  button.mini { min-height: 0; height: auto; padding: 0 4px; font-size: 12px; border: 0; background: transparent; color: #7FD8F7;
+                text-decoration: underline; text-underline-offset: 3px; border-radius: 0; }
+  button.mini:hover { color: #B5E9FB; background: transparent; }
   #chat { overflow-y: auto; flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 4px 2px 2px; min-height: 0; overscroll-behavior: contain; }
   .msg { max-width: 88%; padding: 8px 12px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; border-radius: 10px; }
   .msg.user { align-self: flex-end; background: #1E4E7A; border-bottom-right-radius: 2px; }

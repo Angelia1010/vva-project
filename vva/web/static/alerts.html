@@ -7,36 +7,59 @@
 <link rel="stylesheet" href="/static/console.css">
 <link rel="stylesheet" href="/static/duties.css">
 <style>
-  .stats { display: flex; gap: 28px; flex-wrap: wrap; }
-  .stats div span { display: block; color: var(--ink-2); font-size: 12px; }
-  .stats div b { font: 600 28px/1.1 var(--digits); font-variant-numeric: tabular-nums; }
+  /* 页头：标题 + 指标在同一行 */
+  .stats { display: flex; gap: 28px; align-items: flex-end; }
+  .stats div { display: flex; flex-direction: column; align-items: flex-end; }
+  .stats span { font-size: 12px; color: var(--ink-2); }
+  .stats b { font: 600 24px/1.15 var(--digits); font-variant-numeric: tabular-nums; }
   .stats b.hot { color: var(--alert-soft); }
-  .bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
-  .bar select { min-width: 140px; }
-  .layout { display: grid; grid-template-columns: minmax(380px, 520px) minmax(0, 1fr); gap: 16px; align-items: start; }
-  .rows { padding: 8px; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .bar select { min-width: 132px; }
+
+  .layout { display: grid; grid-template-columns: minmax(360px, 440px) minmax(0, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
-  .row { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; width: 100%;
-         background: transparent; text-align: left; color: inherit; min-height: 0; }
-  .row:hover { background: var(--panel-2); border-color: transparent; }
-  .row[aria-current="true"] { background: #152741; border-color: #3A5A86; }
-  .row .shot { width: 96px; height: 64px; flex: 0 0 auto; }
-  .row .b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .row .ev { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row .t { font: 13px var(--digits); color: var(--ink-2); }
-  .detail { min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px; }
-  .detail .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; max-width: 900px; }
-  .detail figure { margin: 0; }
-  .detail figure .shot { aspect-ratio: 16 / 10; }
-  .detail figcaption { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
-  .why { padding: 12px 14px; border-radius: 8px; background: var(--bar); border: 1px solid #1C2C44; line-height: 1.7; }
-  .why span { display: block; font-size: 12px; color: var(--ink-2); }
-  .events { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-  .events li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
-  .events li .t { width: 64px; flex: 0 0 auto; font: 13px var(--digits); color: var(--ink-2); }
-  .events li .a { color: var(--ink-2); font-size: 12px; }
-  .acts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .empty { padding: 28px; text-align: center; color: var(--ink-3); }
+
+  /* 左：列表 */
+  .rows { padding: 6px; }
+  .row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; padding: 10px; border-radius: 8px;
+         border: 1px solid transparent; background: transparent; text-align: left; color: inherit; min-height: 0; cursor: pointer; }
+  .row + .row { margin-top: 2px; }
+  .row:hover { background: rgba(255, 255, 255, .03); border-color: transparent; }
+  .row[aria-current="true"] { background: #152741; border-color: #2F4B72; }
+  .row .shot { width: 76px; height: 54px; }
+  .row .l1, .row .l2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row .nm { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .row .l1 .time { margin-left: auto; }
+  .row .l2 { margin-top: 4px; }
+  .row .ev { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .status { line-height: 20px; padding: 0 8px; font-size: 12px; flex: 0 0 auto; }
+
+  /* 右：详情 */
+  .detail { min-width: 0; padding: 0; display: flex; flex-direction: column; }
+  body.app .page > .layout > .detail { overflow: hidden; }
+  .d-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--rule); }
+  .d-head h2 { margin: 0; font-size: 18px; }
+  .d-head .spacer { flex: 1; }
+  .d-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 20px; }
+  .sec > .label { display: block; margin-bottom: 8px; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 320px)); gap: 12px; }
+  .shots figure { margin: 0; }
+  .shots .shot { aspect-ratio: 16 / 10; }
+  .shots figcaption { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .why { font-size: 15px; line-height: 1.7; }
+  .why-meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-top: 10px; font-size: 13px; }
+  .why-meta dt { color: var(--ink-2); } .why-meta dd { margin: 0; color: #D3DCE7; }
+  .events { margin: 0; padding: 0 0 0 4px; list-style: none; }
+  .events li { position: relative; display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; padding: 0 0 12px 16px; font-size: 13px; }
+  .events li::before { content: ""; position: absolute; left: 0; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: #3A5A86; }
+  .events li::after { content: ""; position: absolute; left: 3px; top: 16px; bottom: 0; width: 1px; background: #22344F; }
+  .events li:last-child::after { display: none; }
+  .events .who { color: var(--ink-2); font-size: 12px; }
+  .d-foot { flex: 0 0 auto; padding: 14px 20px; border-top: 1px solid var(--rule); background: var(--bar); border-radius: 0 0 10px 10px;
+            display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .d-foot .btns { display: flex; gap: 8px; }
+  .d-foot .opt { grid-column: 1 / -1; }
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-3); }
 </style>
 </head>
 <body class="app">
@@ -56,7 +79,7 @@
 
 <div class="page">
   <div class="page-head">
-    <div><h1>告警中心</h1><p id="sub">职责命中后的记录：截图、依据、通知了谁、谁在什么时候处理的。</p></div>
+    <div><h1>告警中心</h1><p id="sub">职责命中后的记录：截图、依据、通知了谁、谁在什么时候怎么处理的。</p></div>
     <span class="spacer"></span>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
     <div class="stats">
@@ -124,10 +147,10 @@ async function load() {
     const b = document.createElement("button"); b.type = "button"; b.className = "row";
     if (a.id === current) b.setAttribute("aria-current", "true");
     const img = a.images.length ? vva.img(a.images[a.images.length - 1].file) : "";
+    const day = new Date(a.ts * 1000).toDateString() !== new Date().toDateString() ? new Date(a.ts * 1000).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) + " " : "";
     b.innerHTML = `<div class="shot">${img ? `<img src="${img}" alt="" loading="lazy">` : ""}</div>
-      <div class="b"><div style="display:flex;gap:8px;align-items:center"><b>${vva.esc(a.duty_name)}</b>${lvl(a.level)}</div>
-        <span class="ev">${vva.esc(a.evidence)}</span><span class="t">${a.time}${new Date(a.ts * 1000).toDateString() !== new Date().toDateString() ? " · " + new Date(a.ts * 1000).toLocaleDateString("zh-CN") : ""}</span></div>
-      <span class="status ${a.status}">${a.status_label}</span>`;
+      <div><div class="l1"><span class="nm">${vva.esc(a.duty_name)}</span>${lvl(a.level)}<span class="time">${day}${a.time.slice(0, 5)}</span></div>
+        <div class="l2"><span class="ev">${vva.esc(a.evidence)}</span><span class="status ${a.status}">${a.status_label}</span></div></div>`;
     b.onclick = () => { current = a.id; rows.querySelectorAll(".row").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "true"); showDetail(a.id); };
     rows.appendChild(b);
   }
@@ -139,30 +162,29 @@ async function showDetail(id) {
   let a;
   try { a = await vva.api("GET", "/api/alerts/" + id); } catch (e) { $("detail").innerHTML = `<p class="empty">${vva.esc(e.message)}</p>`; return; }
   const open = a.status === "pending" || a.status === "handling";
+  const when = new Date(a.ts * 1000).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const shots = a.images.map((im, i) => `<figure><div class="shot"><img src="${vva.img(im.file)}" alt="${vva.esc(im.caption)}">
+      ${i === a.images.length - 1 && a.box ? `<div class="box" style="${boxStyle(a.box)}"></div>` : ""}</div><figcaption>${vva.esc(im.caption)}</figcaption></figure>`).join("");
   $("detail").innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <h2 style="margin:0;font-size:18px">${vva.esc(a.duty_name)}</h2>${lvl(a.level)}<span class="status ${a.status}">${a.status_label}</span>
-      <span style="flex:1"></span><span class="num" style="color:var(--ink-2);font-size:15px">${new Date(a.ts * 1000).toLocaleString("zh-CN", { hour12: false })}</span>
-      <button type="button" class="danger" id="btn-del" style="min-height:30px;padding:2px 12px">删除</button></div>
-    <div class="shots">${a.images.map((im, i) => `<figure><div class="shot"><img src="${vva.img(im.file)}" alt="${vva.esc(im.caption)}">
-      ${i === a.images.length - 1 && a.box ? `<div class="box" style="${boxStyle(a.box)}"></div>` : ""}</div><figcaption>${vva.esc(im.caption)}</figcaption></figure>`).join("")
-      || '<p class="muted">没有保存截图。</p>'}</div>
-    <div class="why"><span>判断依据</span>${vva.esc(a.evidence || "—")}${a.rule_ref ? `<span style="margin-top:6px">规章依据：${vva.esc(a.rule_ref)}</span>` : ""}
-      <span style="margin-top:6px">职责内容：${vva.esc(a.condition)}</span></div>
-    <div><div class="muted" style="font-size:12px;margin-bottom:8px">处理经过</div>
-      <ol class="events">${a.events.map(e => `<li><span class="t">${e.time}</span><span>${vva.esc(e.text)} <span class="a">· ${vva.esc(e.actor)}</span></span></li>`).join("")}</ol></div>
-    ${a.status === "record" ? "" : `
-    <div><label class="field" for="note" style="margin-top:0">处理备注</label>
-      <textarea id="note" placeholder="如：已现场劝阻">${vva.esc(a.note || "")}</textarea></div>
-    <div class="acts">
+    <div class="d-head"><h2>${vva.esc(a.duty_name)}</h2>${lvl(a.level)}<span class="status ${a.status}">${a.status_label}</span>
+      <span class="spacer"></span><span class="time">${when}</span><button type="button" class="link danger" id="btn-del">删除</button></div>
+    <div class="d-body">
+      <div class="sec"><span class="label">判断依据</span>
+        <div class="why">${vva.esc(a.evidence || "—")}</div>
+        <dl class="why-meta"><dt>职责内容</dt><dd>${vva.esc(a.condition)}</dd>${a.rule_ref ? `<dt>规章依据</dt><dd>${vva.esc(a.rule_ref)}</dd>` : ""}
+          ${a.handler ? `<dt>处理人</dt><dd>${vva.esc(a.handler)}${a.handled_text ? " · " + a.handled_text : ""}</dd>` : ""}${a.note ? `<dt>备注</dt><dd>${vva.esc(a.note)}</dd>` : ""}</dl></div>
+      <div class="sec"><span class="label">现场截图</span>${shots ? `<div class="shots">${shots}</div>` : '<p class="sub" style="margin:0">没有保存截图。</p>'}</div>
+      <div class="sec"><span class="label">处理经过</span>
+        <ol class="events">${a.events.map(e => `<li><span class="time">${e.time}</span><span>${vva.esc(e.text)} <span class="who">· ${vva.esc(e.actor)}</span></span></li>`).join("")}</ol></div>
+    </div>
+    ${a.status === "record" ? "" : `<div class="d-foot">
       <label for="actor" class="sr-only">处理人</label>
-      <input id="actor" type="text" placeholder="处理人" style="width:140px" value="${vva.esc(localStorage.getItem("vva-actor") || "")}">
-      ${a.status === "trial" ? `<button type="button" class="primary" data-a="trial_ok">准确</button><button type="button" data-a="false">不准（误报）</button>` : `
-      <button type="button" class="primary" data-a="resolve">已处理</button>
-      ${open ? '<button type="button" data-a="handling">处理中</button>' : ""}
-      <button type="button" data-a="false">误报</button>`}
-      <span style="flex:1"></span>
-      <label class="switch"><input type="checkbox" id="add-ref" checked>标为误报时，把截图作为“不算”的例子，下次复核参考</label>
+      <input id="actor" type="text" placeholder="处理人" value="${vva.esc(localStorage.getItem("vva-actor") || "")}">
+      <label for="note" class="sr-only">处理备注</label>
+      <input id="note" type="text" placeholder="处理备注，如：已现场劝阻" value="${vva.esc(a.note || "")}">
+      <div class="btns">${a.status === "trial" ? `<button type="button" class="primary" data-a="trial_ok">准确</button><button type="button" data-a="false">不准</button>` : `
+        <button type="button" class="primary" data-a="resolve">已处理</button>${open ? '<button type="button" data-a="handling">处理中</button>' : ""}<button type="button" data-a="false">误报</button>`}</div>
+      <label class="switch opt"><input type="checkbox" id="add-ref" checked>标为误报时，把截图作为“不算”的例子，下次复核时参考</label>
     </div>`}`;
   $("btn-del").onclick = async () => {
     if (!confirm(`删除这条“${a.duty_name}”告警？截图和处理经过会一起删除，不能恢复。`)) return;
@@ -185,6 +207,7 @@ $("f-status").querySelectorAll("button").forEach(b => b.onclick = () => {
   load();
 });
 $("f-duty").onchange = $("f-days").onchange = () => { current = 0; load(); };
+if (params.get("days") !== null && [...$("f-days").options].some(o => o.value === params.get("days"))) $("f-days").value = params.get("days");
 // 从值守台“告警中心”跳过来时带着 status=pending：选中“待处理”
 $("f-status").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.v === status || (!status && !x.dataset.v))));
 

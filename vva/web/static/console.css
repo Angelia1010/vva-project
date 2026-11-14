@@ -175,3 +175,28 @@ label.field .muted { font-weight: 400; margin-left: 6px; }
   .duty .clock { display: none; }
   .page { padding: 16px 14px 40px; }
 }
+
+/* ---------------- 统一的文字层级 ----------------
+   页标题 20 / 区块标题 15 / 正文 14 / 次要说明 13 / 小标签与时间 12 */
+.label { font-size: 12px; font-weight: 500; color: var(--ink-2); letter-spacing: .04em; }
+.sub { font-size: 13px; color: var(--ink-2); }
+.time { font: 13px var(--digits); font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+
+/* 文字链接样式的按钮：蓝字、下划线（表格里的操作、指令区的打断等） */
+button.link, a.link { min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px;
+  color: #7FD8F7; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+button.link:hover, a.link:hover { color: #B5E9FB; background: transparent; }
+button.link.danger, a.link.danger { color: var(--alert-soft); background: transparent; border: 0; }
+button.link:disabled { color: var(--ink-2); text-decoration: none; }
+
+/* 数据表格 */
+table.grid { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.grid th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; font-size: 12px; font-weight: 500;
+  color: var(--ink-2); padding: 10px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.grid td { padding: 12px; border-bottom: 1px solid #1A2A42; vertical-align: top; }
+table.grid tr:hover td { background: rgba(255, 255, 255, .02); }
+table.grid tr.group td { padding: 14px 12px 6px; font-size: 12px; font-weight: 500; color: var(--ink-3); border-bottom: 1px solid var(--rule); background: transparent; }
+table.grid td.num { font: 600 18px/1.2 var(--digits); font-variant-numeric: tabular-nums; text-align: right; }
+table.grid .acts { display: flex; gap: 14px; white-space: nowrap; }
+table.grid .acts button.link { text-decoration: none; }
+table.grid .acts button.link:hover { text-decoration: underline; }

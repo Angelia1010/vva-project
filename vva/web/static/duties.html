@@ -7,22 +7,31 @@
 <link rel="stylesheet" href="/static/console.css">
 <link rel="stylesheet" href="/static/duties.css">
 <style>
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
-  .main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-  body.app .page > .layout > .main { overflow: hidden; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  .main { min-width: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  body.app .page > .layout > .main { overflow: hidden; display: flex; }
+  .toolbar { display: flex; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+  .toolbar .count { color: var(--ink-2); font-size: 13px; }
+  .table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 4px 8px; }
+  td.state { width: 108px; white-space: nowrap; }
+  td.state .s { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+  td.state .s.running { color: #7BE6B1; } td.state .s.trial { color: #CDBEFF; } td.state .s.error { color: var(--alert-soft); }
+  td.state .s.idle, td.state .s.paused { color: var(--ink-2); }
+  td.state .why { display: block; margin-top: 2px; font-size: 12px; color: var(--alert-soft); white-space: normal; max-width: 140px; }
+  td.dname .name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  td.dname .cond { margin-top: 3px; font-size: 12px; color: var(--ink-2); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.action { font-size: 13px; color: #D3DCE7; min-width: 170px; max-width: 260px; }
+  td.action.warn { color: #F5D08A; }
+  td.period { font-size: 13px; color: #D3DCE7; white-space: nowrap; }
+  td.num.hot { color: var(--alert-soft); }
   .side { display: flex; flex-direction: column; gap: 16px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; align-content: start; }
-  body.app #list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 6px; }
-  .count-line { color: var(--ink-2); font-size: 13px; }
-  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
-  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .change { padding: 8px 0; border-bottom: 1px solid #1A2A42; font-size: 13px; }
+  .change { padding: 9px 0; border-bottom: 1px solid #1A2A42; }
   .change:last-child { border-bottom: 0; }
-  .change .when { font: 13px var(--digits); color: var(--ink-2); margin-right: 8px; }
-  .change .who { color: var(--ink-2); font-size: 12px; }
-  .empty { padding: 28px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; color: var(--ink-3); line-height: 1.9; }
-  .legend { display: grid; gap: 8px; font-size: 13px; color: var(--ink-3); }
-  .legend div { display: flex; align-items: center; gap: 8px; }
+  .change .line { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+  .change .who { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-3); line-height: 1.9; }
+  @media (max-width: 1400px) { .layout { grid-template-columns: minmax(0, 1fr) 240px; } td.dname .cond { max-width: 240px; } td.state { width: 96px; } }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } td.dname .cond { max-width: 220px; } }
 </style>
 </head>
 <body class="app">
@@ -51,8 +60,8 @@
   </div>
 
   <div class="layout">
-    <section class="main" aria-label="职责清单">
-      <div class="bar">
+    <section class="panel main" aria-label="职责清单">
+      <div class="toolbar">
         <div class="seg" role="group" aria-label="筛选" id="filter">
           <button type="button" data-f="" aria-pressed="true">全部</button>
           <button type="button" data-f="watch" aria-pressed="false">盯守</button>
@@ -60,28 +69,24 @@
           <button type="button" data-f="report" aria-pressed="false">汇报</button>
           <button type="button" data-f="temp" aria-pressed="false">临时任务</button>
         </div>
-        <span class="count-line" id="count-line"></span>
+        <span class="count" id="count-line"></span>
         <span style="flex:1"></span>
         <button type="button" id="btn-tpl">从行业模板添加</button>
         <button type="button" class="primary" id="btn-add">添加职责</button>
       </div>
-      <div id="list" class="grid"></div>
+      <div class="table-wrap">
+        <table class="grid">
+          <thead><tr><th>状态</th><th>职责</th><th>处置</th><th>期限</th><th style="text-align:right">今日</th><th>操作</th></tr></thead>
+          <tbody id="list"></tbody>
+        </table>
+        <div id="empty" class="empty" hidden></div>
+      </div>
     </section>
 
     <aside class="side">
-      <section class="panel" aria-labelledby="t-legend">
-        <h2 id="t-legend">状态说明</h2>
-        <div class="legend">
-          <div><span class="dot running"></span>运行中：在生效时间内，正在值守</div>
-          <div><span class="dot"></span>未到生效时间 / 已暂停</div>
-          <div><span class="dot trial"></span>试运行：只记录不通知，到告警中心标注准不准</div>
-          <div><span class="dot error"></span>异常：通知发不出去，按提示到“设置”里处理</div>
-          <div><span class="dot temp"></span>临时任务：语音或钉钉下达，到期自动结束</div>
-        </div>
-      </section>
       <section class="panel" aria-labelledby="t-changes">
         <h2 id="t-changes">最近变更</h2>
-        <div id="changes"><p class="muted">没有记录。</p></div>
+        <div id="changes"><p class="sub">没有记录。</p></div>
       </section>
     </aside>
   </div>
@@ -94,39 +99,66 @@ const $ = (id) => document.getElementById(id);
 let all = [], filter = "", msgTimer = null;
 function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
 
+const STATE = { running: "运行中", idle: "未到生效时间", paused: "已暂停", trial: "试运行", error: "异常" };
+const LEVEL = { urgent: '<span class="tag urgent">紧急</span>', important: '<span class="tag important">重要</span>' };
+
 async function load() {
   try { all = (await vva.api("GET", "/api/duties")).duties; } catch (e) { msg(e.message, "err"); return; }
   render();
   try {
     const ch = (await vva.api("GET", "/api/duties/changes")).changes;
-    $("changes").innerHTML = ch.length ? ch.map(c => `<div class="change"><span class="when">${c.time}</span>${vva.esc(c.action)}
-      ${vva.esc(c.name || c.detail || c.duty_id)}<div class="who">${vva.esc(c.actor)}${c.action === "修改" && c.detail ? " · 改了 " + vva.esc(c.detail) : ""}</div></div>`).join("")
-      : '<p class="muted">没有记录。</p>';
+    $("changes").innerHTML = ch.length ? ch.map(c => `<div class="change"><div class="line"><span class="time">${c.time}</span><span>${vva.esc(c.action)} ${vva.esc(c.name || c.detail || c.duty_id)}</span></div>
+      <div class="who">${vva.esc(c.actor)}${c.action === "修改" && c.detail ? " · 改了 " + vva.esc(c.detail) : ""}</div></div>`).join("")
+      : '<p class="sub">没有记录。</p>';
   } catch (e) {}
+}
+
+function row(d) {
+  const tr = document.createElement("tr");
+  const why = d.state === "error" ? `<span class="why">${vva.esc(d.state_text.replace(/^异常：/, ""))}</span>` : "";
+  const kind = d.temporary ? '<span class="tag">临时</span>' : (d.kind !== "watch" ? `<span class="tag">${vva.esc(d.kind_label)}</span>` : "");
+  const dot = d.temporary && d.state === "running" ? "temp" : (d.state === "running" ? "running" : d.state);
+  const count = d.kind === "watch" ? d.today_count : "—";
+  tr.innerHTML = `<td class="state"><span class="s ${d.state}"><span class="dot ${dot}" aria-hidden="true"></span>${STATE[d.state] || d.state}</span>${why}</td>
+    <td class="dname"><div class="name">${vva.esc(d.name)}${kind}${LEVEL[d.level] || ""}</div><div class="cond" title="${vva.esc(d.condition)}">${vva.esc(d.condition)}</div></td>
+    <td class="action ${/未设置/.test(d.action_text) ? "warn" : ""}">${vva.esc(d.action_text)}</td>
+    <td class="period">${vva.esc(d.period_text)}${d.kind === "inspect" && d.last_result ? `<div class="sub" style="font-size:12px">上次：${vva.esc(d.last_result)}</div>` : ""}</td>
+    <td class="num ${d.kind === "watch" && d.today_count ? "hot" : ""}">${count}</td>
+    <td><div class="acts"></div></td>`;
+  const acts = tr.querySelector(".acts");
+  const add = (label, fn, cls) => { const b = document.createElement("button"); b.type = "button"; b.className = "link " + (cls || ""); b.textContent = label; b.onclick = () => fn(d, b); acts.appendChild(b); };
+  if (d.kind !== "report") add("试一下", testDuty);
+  add(d.enabled ? "暂停" : "恢复", toggle);
+  add(d.temporary ? "转长期" : "编辑", edit);
+  add("告警", (x) => { location.href = "/alerts?duty=" + encodeURIComponent(x.id) + "&days=0"; });
+  add(d.temporary ? "取消" : "删除", remove, "danger");
+  return tr;
+}
+function group(title, n) {
+  const tr = document.createElement("tr"); tr.className = "group";
+  tr.innerHTML = `<td colspan="6">${title} · ${n}</td>`; return tr;
 }
 function render() {
   const box = $("list"); box.innerHTML = "";
-  const temps = all.filter(d => d.temporary).length;
-  $("count-line").textContent = `长期职责 ${all.length - temps} 项 · 临时任务 ${temps} 个`;
-  const list = all.filter(d => !filter || (filter === "temp" ? d.temporary : (!d.temporary && d.kind === filter)));
-  if (!list.length) {
-    box.innerHTML = `<div class="empty" style="grid-column:1/-1">${all.length ? "这一类还没有职责。" : "还没有职责。<br>选一个行业模板一键添加常用职责，或者用一句话描述要它盯什么。"}</div>`;
-    return;
-  }
-  const actions = {
-    test: async (d, b) => {
-      b.disabled = true; b.textContent = "检查中…";
-      try { const r = await vva.api("POST", "/api/duties/test", { id: d.id }); msg(`${d.name}：${r.match ? "命中" : "未命中"}。${r.evidence || ""}`, r.match ? "err" : "ok"); }
-      catch (e) { msg(e.message, "err"); }
-      b.disabled = false; b.textContent = "试一下";
-    },
-    toggle: async (d) => { try { await vva.api("PUT", "/api/duties/" + d.id, { enabled: !d.enabled }); load(); } catch (e) { msg(e.message, "err"); } },
-    edit: (d) => DutyEditor.open(d.temporary ? { ...d, temporary: false, expires: 0 } : d, { onSaved: () => { msg("已保存", "ok"); load(); } }),
-    alerts: (d) => { location.href = "/alerts?duty=" + encodeURIComponent(d.id); },
-    remove: async (d) => { try { if (await removeDuty(d)) { msg("已删除", "ok"); load(); } } catch (e) { msg("删除失败：" + e.message, "err"); } },
-  };
-  for (const d of list) box.appendChild(dutyCard(d, actions, { open: true }));
+  const longs = all.filter(d => !d.temporary), temps = all.filter(d => d.temporary);
+  $("count-line").textContent = `长期职责 ${longs.length} 项 · 临时任务 ${temps.length} 个`;
+  const pick = (d) => !filter || (filter === "temp" ? d.temporary : (!d.temporary && d.kind === filter));
+  const L = longs.filter(pick), T = temps.filter(pick);
+  $("empty").hidden = !!(L.length || T.length);
+  $("empty").innerHTML = all.length ? "这一类还没有职责。" : "还没有职责。<br>点右上角“从行业模板添加”，一键添加常用职责；或者“添加职责”，用一句话描述要盯什么。";
+  if (L.length && filter !== "temp") { if (T.length) box.appendChild(group("长期职责", L.length)); L.forEach(d => box.appendChild(row(d))); }
+  if (T.length) { box.appendChild(group("临时任务", T.length)); T.forEach(d => box.appendChild(row(d))); }
 }
+async function testDuty(d, b) {
+  b.disabled = true; b.textContent = "检查中…";
+  try { const r = await vva.api("POST", "/api/duties/test", { id: d.id }); msg(`${d.name}：${r.match ? "命中" : "未命中"}。${r.evidence || ""}`, r.match ? "err" : "ok"); }
+  catch (e) { msg(e.message, "err"); }
+  b.disabled = false; b.textContent = "试一下";
+}
+async function toggle(d) { try { await vva.api("PUT", "/api/duties/" + d.id, { enabled: !d.enabled }); load(); } catch (e) { msg(e.message, "err"); } }
+function edit(d) { DutyEditor.open(d.temporary ? { ...d, temporary: false, expires: 0 } : d, { onSaved: () => { msg("已保存", "ok"); load(); } }); }
+async function remove(d) { try { if (await removeDuty(d)) { msg("已删除", "ok"); load(); } } catch (e) { msg("删除失败：" + e.message, "err"); } }
+
 $("filter").querySelectorAll("button").forEach(b => b.onclick = () => {
   filter = b.dataset.f;
   $("filter").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
