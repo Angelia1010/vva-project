@@ -92,7 +92,7 @@ class DutyEngine:
         """新建告警并按职责通知（试运行只记录）。巡检异常也走这里。"""
         trial = duty.mode == "trial"
         alert = self.alerts.create(duty, evidence, images, "trial" if trial else "pending", box, kind, ts)
-        self.alerts.store.add_event(alert.id, "AI 值守员", f"发现：{evidence}" if evidence else "发现")
+        self.alerts.store.add_event(alert.id, "春雷问鉴", f"发现：{evidence}" if evidence else "发现")
         if trial:
             self.alerts.store.add_event(alert.id, "系统", "试运行中，只记录不通知")
             log.info("【%s】命中（试运行，只记录不通知）：%s", duty.name, evidence)

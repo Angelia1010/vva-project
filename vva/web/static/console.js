@@ -1,4 +1,4 @@
-// AI 值守台：所有页面共用的脚本（时钟、管理口令、接口请求）
+// 春雷问鉴：所有页面共用的脚本（时钟、管理口令、接口请求）
 (function () {
   const clock = document.getElementById("clock");
   if (clock) {

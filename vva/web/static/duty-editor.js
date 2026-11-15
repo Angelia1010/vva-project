@@ -84,7 +84,7 @@
         <textarea id="dd-cond" placeholder="如：画面中有人吸烟，或手里夹着点燃的香烟">${esc(s.condition)}</textarea>
         <div id="dd-hints"></div>
       </div>
-      ${meta.objects.length && s.kind !== "report" ? `<div><span class="lbl">引用技能目标 <span class="muted">· 判断时带上它们的参考图</span></span>
+      ${meta.objects.length && s.kind !== "report" ? `<div><span class="lbl">引用学过的目标 <span class="muted">· 判断时带上它们的参考图</span></span>
         ${chipList("objects", meta.objects.map(o => ({ id: o, label: o })), s.objects || [])}</div>` : ""}
       ${s.kind === "watch" ? `<div class="row2">
         <div><label class="lbl" for="dd-hours">期限 · 每天几点 <span class="muted">· 留空为全天</span></label><input id="dd-hours" type="text" value="${esc(s.hours)}" placeholder="08:00-18:00"></div>

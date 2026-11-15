@@ -2,8 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>值守台 - AI 值守台</title>
+<title>值守台 - 春雷问鉴</title>
 <link rel="stylesheet" href="/static/console.css">
 <link rel="stylesheet" href="/static/duties.css">
 <style>
@@ -160,13 +161,13 @@
 </head>
 <body>
 <header class="duty">
-  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <a class="brand" href="/browser" aria-label="春雷问鉴 首页"><img src="/static/logo.svg" width="28" height="28" alt="">春雷问鉴</a>
   <nav aria-label="页面">
     <a href="/browser" aria-current="page">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts">告警</a>
     <a href="/actions">执行</a>
-    <a href="/skills">技能</a>
+    <a href="/skills">自学习</a>
     <a href="/knowledge">知识库</a>
     <a href="/settings">设置</a>
   </nav>
@@ -206,7 +207,7 @@
         <div id="temps" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
     </div>
-    <div class="setup-line"><a href="/skills" id="setup-skill">技能</a><span aria-hidden="true">·</span><a href="/knowledge" id="setup-kb">知识库</a><span class="spacer"></span><a href="/duties">全部职责 ›</a></div>
+    <div class="setup-line"><a href="/skills" id="setup-skill">自学习</a><span aria-hidden="true">·</span><a href="/knowledge" id="setup-kb">知识库</a><span class="spacer"></span><a href="/duties">全部职责 ›</a></div>
   </aside>
 
   <!-- 中：画面 -->
@@ -664,12 +665,12 @@ $("btn-mic").onclick = async () => {
   catch (e) { stopMic(); notice("无法开启语音：" + e.message); }
 };
 
-// ============================================================ 技能、知识库概况
+// ============================================================ 自学习、知识库概况
 async function loadSetup() {
   try {
     const on = (await vva.api("GET", "/api/skills")).skills.filter(s => s.enabled);
-    $("setup-skill").textContent = on.length ? `技能 ${on.length} 个` : "技能未启用";
-  } catch (e) { $("setup-skill").textContent = "技能"; }
+    $("setup-skill").textContent = on.length ? `已学会 ${on.length} 项` : "自学习未启用";
+  } catch (e) { $("setup-skill").textContent = "自学习"; }
   try {
     const kb = await vva.api("GET", "/api/knowledge");
     $("setup-kb").textContent = kb.documents.length ? `知识库 ${kb.documents.length} 份` : "知识库为空";

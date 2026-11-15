@@ -1,4 +1,4 @@
-/* AI 值守台：所有页面共用的样式（深色值班室主题）
+/* 春雷问鉴：所有页面共用的样式（深色值班室主题）
    颜色只表达状态：青色 = 正在工作 / 可操作，绿色 = 运行正常，琥珀 = 处理中 / 注意，红色 = 告警，紫色 = 试运行 */
 /* 字体只用系统自带的：内网、国内网络都能正常显示，不会因为加载外网字体卡住页面 */
 
@@ -41,8 +41,9 @@ a:hover { color: #B5E9FB; }
   padding: 0 24px; min-height: 60px; background: var(--bar); color: var(--ink);
   border-bottom: 1px solid #1C2C44;
 }
-.duty .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
-.duty .brand svg { flex: 0 0 auto; }
+.duty .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; letter-spacing: .12em; white-space: nowrap; color: var(--ink); text-decoration: none; }
+.duty .brand:hover { color: #fff; }
+.duty .brand img { flex: 0 0 auto; display: block; }
 .duty nav { display: flex; align-self: stretch; flex-wrap: wrap; }
 .duty nav a {
   display: flex; align-items: center; padding: 0 15px; color: var(--ink-2); text-decoration: none;

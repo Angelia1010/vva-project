@@ -2,8 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>设置 - AI 值守台</title>
+<title>设置 - 春雷问鉴</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
   .layout { display: grid; grid-template-columns: minmax(0, 860px) 380px; gap: 20px; align-items: start; }
@@ -20,13 +21,13 @@
 </head>
 <body class="app">
 <header class="duty">
-  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <a class="brand" href="/browser" aria-label="春雷问鉴 首页"><img src="/static/logo.svg" width="28" height="28" alt="">春雷问鉴</a>
   <nav aria-label="页面">
     <a href="/browser">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts">告警</a>
     <a href="/actions">执行</a>
-    <a href="/skills">技能</a>
+    <a href="/skills">自学习</a>
     <a href="/knowledge">知识库</a>
     <a href="/settings" aria-current="page">设置</a>
   </nav>
@@ -36,7 +37,7 @@
 
 <div class="page">
   <div class="page-head">
-    <div><h1>设置</h1><p>岗位信息会显示在值守台和通知里，也会告诉 AI 值守员画面里是什么地方、有哪些规矩。</p></div>
+    <div><h1>设置</h1><p>岗位信息会显示在值守台和通知里，也会告诉春雷问鉴画面里是什么地方、有哪些规矩。</p></div>
     <span class="spacer"></span>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
   </div>
@@ -65,7 +66,7 @@
       <section class="panel" aria-labelledby="t-more">
         <h2 id="t-more">识别与知识</h2>
         <div style="display:flex;flex-direction:column;gap:10px">
-          <a class="entry" href="/skills"><div><b>技能</b><span>特定目标的参考图、热词、现场概况</span></div></a>
+          <a class="entry" href="/skills"><div><b>自学习</b><span>教它认识特定目标：参考图、判断标准、热词</span></div></a>
           <a class="entry" href="/knowledge"><div><b>知识库</b><span>规章、规程、设备手册</span></div></a>
         </div>
       </section>

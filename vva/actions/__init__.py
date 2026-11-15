@@ -49,7 +49,7 @@ SEEDS: list[dict[str, Any]] = [
     {"code": 1, "name": "现场喇叭喊话", "kind": "speaker", "summary": "通过现场音箱播报一段提醒，可以临时指定要说的话",
      "config": {"text": "请注意，这里是监控区域，请遵守现场安全规定。"}},
     {"code": 2, "name": "通知值班群", "kind": "notify", "summary": "给钉钉/飞书的默认告警群发一条通知，附当前岗位和时间",
-     "config": {"text": "值守台提醒：请值班人员关注现场情况。"}},
+     "config": {"text": "春雷问鉴提醒：请值班人员关注现场情况。"}},
     {"code": 3, "name": "抓拍存证", "kind": "snapshot", "summary": "保存当前画面，留作证据"},
     {"code": 4, "name": "声光报警", "kind": "webhook", "summary": "打开现场的声光报警器"},
     {"code": 5, "name": "拨打值班电话", "kind": "webhook", "summary": "通过语音网关拨打值班负责人电话"},
@@ -273,7 +273,7 @@ class ActionService:
             if not say:
                 raise RuntimeError("没有要发送的内容")
             station = self.station_name()
-            sent = await self._notify(f"{station + ' · ' if station else ''}值守台通知", say)
+            sent = await self._notify(f"{station + ' · ' if station else ''}春雷问鉴通知", say)
             return f"已发到 {'、'.join(sent)}", ""
         if a.kind == "snapshot":
             jpeg = self._snapshot() if self._snapshot else None

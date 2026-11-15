@@ -2,13 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>技能 - AI 值守台</title>
+<title>自学习 - 春雷问鉴</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
   .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
 
-  /* 左侧：技能列表，像值班表一样一行一个 */
+  /* 左侧：已学会的，像值班表一样一行一个 */
   .roster { position: sticky; top: 16px; padding: 0; }
   .roster-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
   .roster-head h2 { margin: 0; font-size: 15px; flex: 1; }
@@ -28,7 +29,7 @@
   .new-form .actions { display: flex; gap: 8px; margin-top: 10px; }
   .roster .empty { padding: 18px 14px; color: var(--ink-2); font-size: 13px; }
 
-  /* 右侧：技能详情 */
+  /* 右侧：学习详情 */
   .detail-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
   .detail-head h2 { margin: 0; font-size: 20px; }
   .detail-head .spacer { flex: 1; }
@@ -81,13 +82,13 @@
 </head>
 <body class="app">
 <header class="duty">
-  <span class="brand"><svg width="24" height="24" viewBox="0 0 26 26" fill="none" stroke="#45C8F5" stroke-width="1.6" aria-hidden="true"><path d="M2 13s4-7 11-7 11 7 11 7-4 7-11 7S2 13 2 13Z"/><circle cx="13" cy="13" r="3.5"/><path d="M13 1v3M13 22v3"/></svg>AI 值守台</span>
+  <a class="brand" href="/browser" aria-label="春雷问鉴 首页"><img src="/static/logo.svg" width="28" height="28" alt="">春雷问鉴</a>
   <nav aria-label="页面">
     <a href="/browser">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts">告警</a>
     <a href="/actions">执行</a>
-    <a href="/skills" aria-current="page">技能</a>
+    <a href="/skills" aria-current="page">自学习</a>
     <a href="/knowledge">知识库</a>
     <a href="/settings">设置</a>
   </nav>
@@ -98,8 +99,8 @@
 <div class="page">
   <div class="page-head">
     <div>
-      <h1>技能</h1>
-      <p>每个技能是一套针对某类任务的做法：用途描述、判断方法与标准、特定目标的参考图、规则模板、热词。监控助手平时只看到技能的名称和用途，用得上时才加载全文。保存后立即生效。</p>
+      <h1>自学习</h1>
+      <p>教春雷问鉴认识你现场特有的东西和做法：参考图、判断标准、规则模板、热词。它平时只记住每项的名称和用途，用得上时才翻出全文。保存后立即生效。</p>
     </div>
     <span class="spacer"></span>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
@@ -108,8 +109,8 @@
   <div class="layout">
     <aside class="panel roster" aria-labelledby="t-roster">
       <div class="roster-head">
-        <h2 id="t-roster">技能列表</h2>
-        <button class="primary" id="btn-new-skill" type="button">新建技能</button>
+        <h2 id="t-roster">已学会的</h2>
+        <button class="primary" id="btn-new-skill" type="button">新建学习</button>
       </div>
       <div class="new-form" id="new-form">
         <label class="field" for="n-name" style="margin-top:0">名称</label>
@@ -122,7 +123,7 @@
     </aside>
 
     <section id="detail">
-      <div class="panel placeholder">从左侧选择一个技能，或新建一个。</div>
+      <div class="panel placeholder">从左侧选择一项，或新建学习。</div>
     </section>
   </div>
 </div>
@@ -137,7 +138,7 @@
     </div>
     <div class="grid2">
       <div>
-        <label class="field">什么时候用<span class="muted">监控助手据此判断要不要加载，写清楚涉及的对象和问题</span></label>
+        <label class="field">什么时候用<span class="muted">春雷问鉴据此判断要不要加载，写清楚涉及的对象和问题</span></label>
         <input type="text" class="f-desc" placeholder="问到压力表读数、是否超压、空压机状态时使用">
         <label class="field">做法与标准<span class="muted">SKILL.md 正文，支持 Markdown</span></label>
         <textarea id="f-body" class="f-body" placeholder="## 判断方法&#10;1. …&#10;&#10;## 判断标准&#10;- 正常范围 …"></textarea>
@@ -153,9 +154,9 @@
       </div>
     </div>
     <div class="detail-actions">
-      <button class="primary b-save" type="button">保存技能</button>
+      <button class="primary b-save" type="button">保存</button>
       <span class="spacer"></span>
-      <button class="danger b-delete" type="button">删除技能</button>
+      <button class="danger b-delete" type="button">删除</button>
     </div>
   </div>
 
@@ -215,7 +216,7 @@ async function loadRoster(select) {
   const data = await call("GET", "/api/skills");
   if (data.token_required) $("token").style.display = "block";
   const ul = $("roster"); ul.innerHTML = "";
-  if (!data.skills.length) ul.innerHTML = '<li class="empty">还没有技能，点“新建技能”开始。</li>';
+  if (!data.skills.length) ul.innerHTML = '<li class="empty">还没有学过任何内容，点“新建学习”开始。</li>';
   for (const s of data.skills) {
     const li = document.createElement("li"); li.className = s.enabled ? "on" : "";
     const tags = [s.always && "常驻", s.has_tools && "专用工具"].filter(Boolean).map(t => `<span class="tag">${t}</span>`).join("");
@@ -231,7 +232,7 @@ async function loadRoster(select) {
 // ---------------------------------------------------------------- 详情
 async function openSkill(name) {
   try { renderDetail(await call("GET", "/api/skills/" + enc(name))); }
-  catch (e) { msg("无法打开技能：" + e.message, "err"); return; }
+  catch (e) { msg("无法打开：" + e.message, "err"); return; }
   document.querySelectorAll("#roster button").forEach(b => b.setAttribute("aria-current", String(b.querySelector(".name").firstChild.textContent.trim() === name)));
 }
 
@@ -247,15 +248,15 @@ function renderDetail(s) {
   q(".f-hotwords").value = s.hotwords.join("，"); q(".f-cameras").value = s.cameras.join("，");
   if (s.has_tools) {
     const n = q(".plugin-note"); n.hidden = false;
-    n.textContent = s.plugin_loaded ? "这个技能带有专用工具（tools.py），加载技能后可用。修改代码需在服务器上进行并重启服务。"
-                                    : "这个技能目录里有 tools.py，但没有加载成功，请查看服务日志。";
+    n.textContent = s.plugin_loaded ? "这一项带有专用工具（tools.py），用到时自动加载。修改代码需在服务器上进行并重启服务。"
+                                    : "这一项的目录里有 tools.py，但没有加载成功，请查看服务日志。";
   }
   q(".b-save").onclick = () => saveSkill(q);
   for (const sel of [".f-enabled", ".f-always"]) q(sel).onchange = () => saveSkill(q, "已更新开关");
   q(".b-delete").onclick = async () => {
-    if (!confirm(`删除技能“${s.name}”，包括它的目标和参考图？`)) return;
+    if (!confirm(`删除“${s.name}”，包括它的目标和参考图？`)) return;
     try { await call("DELETE", "/api/skills/" + enc(s.name)); current = null; await loadRoster();
-          $("detail").innerHTML = '<div class="panel placeholder">已删除。从左侧选择一个技能，或新建一个。</div>'; msg("已删除技能", "ok"); }
+          $("detail").innerHTML = '<div class="panel placeholder">已删除。从左侧选择一项，或新建学习。</div>'; msg("已删除", "ok"); }
     catch (e) { msg("删除失败：" + e.message, "err"); }
   };
   q(".b-new-obj").onclick = () => openEditor(q, null);
@@ -271,7 +272,7 @@ async function saveSkill(q, okText) {
     const s = await call("PUT", "/api/skills/" + enc(current), {
       description: q(".f-desc").value.trim(), body: q(".f-body").value, enabled: q(".f-enabled").checked,
       always: q(".f-always").checked, rules, hotwords: splitList(q(".f-hotwords").value), cameras: splitList(q(".f-cameras").value) });
-    await loadRoster(); renderDetail(s); msg(okText || "已保存技能", "ok");
+    await loadRoster(); renderDetail(s); msg(okText || "已保存", "ok");
   } catch (e) { msg("没有保存：" + e.message, "err"); }
 }
 
@@ -298,7 +299,7 @@ async function objAct(fn, okText) {
 function renderObjects(q, s) {
   const box = q(".objects"); box.innerHTML = "";
   if (!s.objects.length) {
-    box.innerHTML = '<p class="hint">这个技能还没有特定目标。需要认出专用设备、指示灯、工牌、标识时再添加。</p>';
+    box.innerHTML = '<p class="hint">这一项还没有特定目标。需要认出专用设备、指示灯、工牌、标识时再添加。</p>';
     return;
   }
   const base = `/api/skills/${enc(s.name)}/objects/`;
@@ -337,11 +338,11 @@ $("btn-new-skill").onclick = () => { $("new-form").classList.add("open"); $("n-n
 $("btn-create-cancel").onclick = () => $("new-form").classList.remove("open");
 $("btn-create").onclick = async () => {
   const name = $("n-name").value.trim();
-  if (!name) { msg("请填写技能名称", "err"); $("n-name").focus(); return; }
+  if (!name) { msg("请填写名称", "err"); $("n-name").focus(); return; }
   try {
     const s = await call("POST", "/api/skills", { name, description: $("n-desc").value.trim() });
     $("new-form").classList.remove("open"); $("n-name").value = ""; $("n-desc").value = "";
-    current = s.name; await loadRoster(); renderDetail(s); msg(`已创建技能“${s.name}”，接着写做法与标准`, "ok");
+    current = s.name; await loadRoster(); renderDetail(s); msg(`已新建“${s.name}”，接着写做法与标准`, "ok");
     document.querySelector("#detail .f-body").focus();
   } catch (e) { msg("没有创建：" + e.message, "err"); }
 };
@@ -351,7 +352,7 @@ $("btn-create").onclick = async () => {
     const skills = await loadRoster();
     const first = skills.find(s => s.enabled) || skills[0];
     if (first) openSkill(first.name);
-  } catch (e) { msg("无法读取技能：" + (String(e.message) === "404" ? "服务端未开启技能（skills.enabled）" : e.message), "err"); }
+  } catch (e) { msg("无法读取：" + (String(e.message) === "404" ? "服务端未开启自学习（skills.enabled）" : e.message), "err"); }
 })();
 </script>
 </body>
