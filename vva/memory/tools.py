@@ -25,7 +25,8 @@ def _sample(items: list, n: int) -> list:
 
 def _event_text(e: MemoryEvent, now: float) -> str:
     people = f" | {e.people}人" if e.people is not None else ""
-    return f"[{fmt_dt(e.ts, now)}] {e.summary}{people}"
+    where = e.details.get("camera_name") if isinstance(e.details, dict) else ""
+    return f"[{fmt_dt(e.ts, now)}]{f'[{where}]' if where else ''} {e.summary}{people}"
 
 
 class MemoryTools(ToolProvider):
@@ -39,6 +40,13 @@ class MemoryTools(ToolProvider):
         self.max_notes = int(max_notes)
         self.look_max_tokens = int(look_max_tokens)
         self.scene_hint = scene_hint
+        self.resolve_camera: Any = None          # 由应用设置：名称 / 编号 → 摄像头（多路时用）
+
+    def _camera(self, camera: str | None) -> tuple[str | None, str]:
+        if not camera or self.resolve_camera is None:
+            return None, ""
+        cam = self.resolve_camera(camera)
+        return (cam.id, "") if cam else (None, f"没有找到摄像头“{camera}”")
 
     def note_lines(self) -> list[str]:
         """给智能体系统提示词用的备忘列表。"""
@@ -51,10 +59,12 @@ class MemoryTools(ToolProvider):
             _fn("search_memory", "按时间段查询长期监控记录（可查到几天前），返回时段摘要、画面记录、提醒和操作员指令。"
                 "适合回答“今天上午9点左右发生了什么”“昨天下午有没有人来过”。",
                 {"start": t, "end": t,
-                 "keyword": {"type": "string", "description": "可选，只看包含该关键词的记录，如“快递”“离开”"}},
+                 "keyword": {"type": "string", "description": "可选，只看包含该关键词的记录，如“快递”“离开”"},
+                 "camera": {"type": "string", "description": "可选，只看某一路摄像头（名称或编号）；不填则所有摄像头"}},
                 ["start", "end"]),
             _fn("look_at_time", "查看长期记忆中某个时刻保存的画面并回答问题，用于记录里的文字不够详细时。",
-                {"time": t, "question": {"type": "string", "description": "要在那张画面里弄清楚的问题"}},
+                {"time": t, "question": {"type": "string", "description": "要在那张画面里弄清楚的问题"},
+                 "camera": {"type": "string", "description": "可选，看哪一路摄像头（名称或编号）；不填则默认当前正在看的那一路"}},
                 ["time", "question"]),
             _fn("remember_note", "记下操作员交代需要长期记住的信息，以后回答时会自动参考。",
                 {"content": {"type": "string", "description": "要记住的内容，如“3 号工位是张工的”"}}, ["content"]),
@@ -63,7 +73,11 @@ class MemoryTools(ToolProvider):
         ]
 
     # ------------------------------------------------------------------ tools
-    async def tool_search_memory(self, start: str, end: str, keyword: str | None = None) -> dict:
+    async def tool_search_memory(self, start: str, end: str, keyword: str | None = None, camera: str | None = None,
+                                 **_: Any) -> dict:
+        cam, err = self._camera(camera)
+        if err:
+            return {"error": err}
         now = time.time()
         try:
             t0, t1 = parse_time(start, now), parse_time(end, now)
@@ -72,7 +86,7 @@ class MemoryTools(ToolProvider):
         if t1 < t0:
             t0, t1 = t1, t0
         summaries = [] if keyword else self.store.summaries_between(t0, t1)
-        events = self.store.events_between(t0, t1, keyword=keyword or None)
+        events = self.store.events_between(t0, t1, keyword=keyword or None, camera=cam)
         result: dict[str, Any] = {"range": f"{fmt_dt(t0, now)} ~ {fmt_dt(t1, now)}"}
         if summaries:
             result["summaries"] = [f"{fmt_dt(s.start, now)[:-3]}-{time.strftime('%H:%M', time.localtime(s.end))} "
@@ -90,13 +104,19 @@ class MemoryTools(ToolProvider):
             result["note"] = f"共 {len(events)} 条记录，已均匀抽取 {len(merged)} 条"
         return result
 
-    async def tool_look_at_time(self, time: str, question: str) -> dict:  # noqa: A002  参数名与工具定义一致
+    async def tool_look_at_time(self, time: str, question: str, camera: str | None = None,  # noqa: A002
+                                **_: Any) -> dict:
+        cam, err = self._camera(camera)
+        if err:
+            return {"error": err}
+        cam = cam or turn.current_camera()
         now = _now()
         try:
             ts = parse_time(time, now)
         except ValueError as e:
             return {"error": str(e)}
-        ev = self.store.nearest_frame(ts, self.max_gap)
+        ev = self.store.nearest_frame(ts, self.max_gap, cam) or (self.store.nearest_frame(ts, self.max_gap)
+                                                                   if not camera else None)
         if ev is None:
             return {"error": f"{fmt_dt(ts, now)} 前后 {int(self.max_gap // 60)} 分钟内没有保存画面"}
         jpeg = self.keyframes.load(ev.frame) if ev.frame else None

@@ -18,6 +18,7 @@ from vva.duties.model import Duty, _hm
 from vva.duties.store import DutyBook
 from vva.notify import NotifyRouter
 from vva.perception.imaging import decode_jpeg, encode_jpeg, resize_max_side
+from vva.cameras import as_frames, scene_for
 from vva.video.frame_buffer import FrameBuffer
 
 log = logging.getLogger(__name__)
@@ -44,17 +45,25 @@ class DutyScheduler:
     def __init__(self, book: DutyBook, engine: DutyEngine, router: NotifyRouter, bus: EventBus, buffer: FrameBuffer,
                  vlm: Any, report: Callable[[float, float], Awaitable[str]], scene: Callable[[], str] | None = None,
                  max_side: int = 1280, interval: float = 30.0) -> None:
-        self.book, self.engine, self.router, self.bus, self.buffer, self.vlm = book, engine, router, bus, buffer, vlm
+        self.book, self.engine, self.router, self.bus, self.vlm = book, engine, router, bus, vlm
+        self.frames = as_frames(buffer)
         self.report, self.scene = report, scene
         self.max_side, self.interval = int(max_side), float(interval)
 
-    async def inspect(self, duty: Duty) -> dict[str, Any]:
-        """执行一次巡检，返回 {result, abnormal, evidence}。"""
-        bf = self.buffer.latest_snapshot(quality=92)
+    def cameras_for(self, duty: Duty) -> list[str]:
+        """巡检要看的摄像头：职责指定的（且还在用的），没指定就是全部。"""
+        ids = self.frames.ids()
+        picked = [c for c in duty.cameras if c in ids] if duty.cameras else ids
+        return picked or ids[:1]
+
+    async def inspect(self, duty: Duty, camera: str = "") -> dict[str, Any]:
+        """在一路摄像头上执行一次巡检，返回 {result, abnormal, evidence, jpeg}。"""
+        buf = self.frames.buffer(camera or None)
+        bf = buf.latest_snapshot(quality=92) if buf else None
         if bf is None:
             return {"result": "没有画面", "abnormal": False, "evidence": ""}
         jpeg = encode_jpeg(resize_max_side(decode_jpeg(bf.jpeg), self.max_side), 90)
-        scene = self.scene() if self.scene else ""
+        scene = scene_for(self.scene, camera)
         data = parse_json(await self.vlm.ask([jpeg], prompts.INSPECT_PROMPT.format(
             scene=f"场景：{scene}\n" if scene else "", condition=duty.condition), json_mode=True))
         if not isinstance(data, dict):
@@ -65,14 +74,22 @@ class DutyScheduler:
     async def run_duty(self, duty: Duty, now: float | None = None) -> None:
         now = now or time.time()
         if duty.kind == "inspect":
-            r = await self.inspect(duty)
-            duty.last_result = str(r.get("result") or "")
-            images = [("巡检画面", r["jpeg"])]
-            if r.get("abnormal"):
-                await self.engine.raise_alert(duty, f"{duty.last_result}。{r.get('evidence') or ''}".strip("。"), images,
-                                              kind="inspect")
-            else:
-                self.engine.alerts.create(duty, duty.last_result, images, "record", None, "inspect")
+            cams = self.cameras_for(duty)
+            results = []
+            for cam in cams:                     # 每一路各查一次，各自出记录或告警
+                r = await self.inspect(duty, cam)
+                result = str(r.get("result") or "")
+                info = self.engine.camera_info(cam) if cam else {}
+                name = info.get("name", "")
+                results.append(f"{name}：{result}" if name and len(cams) > 1 else result)
+                images = [("巡检画面", r["jpeg"])] if r.get("jpeg") else []
+                if r.get("abnormal"):
+                    await self.engine.raise_alert(duty, f"{result}。{r.get('evidence') or ''}".strip("。"), images,
+                                                  kind="inspect", camera=cam)
+                else:
+                    self.engine.alerts.create(duty, result, images, "record", None, "inspect", camera=cam,
+                                              camera_name=name, station=info.get("station", ""))
+            duty.last_result = "；".join(results)
         elif duty.kind == "report":
             start = duty.last_run or now - 86400
             text = await self.report(start, now)

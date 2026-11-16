@@ -21,6 +21,7 @@ from vva.perception.imaging import (
     resize_max_side,
     validate_region,
 )
+from vva.cameras import as_frames, scene_for
 from vva.video.frame_buffer import FrameBuffer
 
 log = logging.getLogger(__name__)
@@ -40,20 +41,22 @@ class Verifier:
                  references: Callable[[str], list[tuple[str, bytes]]] | None = None,
                  negatives: Callable[[Duty], list[bytes]] | None = None) -> None:
         """references：按文字取技能目标的参考图；negatives：这条职责标过误报的截图（“不算”的例子）。"""
-        self.buffer, self.vlm = buffer, vlm
+        self.frames, self.vlm = as_frames(buffer), vlm
         self.delay, self.max_side, self.crop_min_side = float(delay), int(max_side), int(crop_min_side)
         self.scene = scene
         self.references = references
         self.negatives = negatives
 
-    def _scene(self) -> str:
-        s = self.scene() if self.scene else ""
+    def _scene(self, camera: str = "") -> str:
+        s = scene_for(self.scene, camera)
         return f"场景：{s}\n" if s else ""
 
-    async def check(self, duty: Duty, evidence: str = "", wait: bool = True) -> VerifyResult:
+    async def check(self, duty: Duty, evidence: str = "", wait: bool = True, camera: str = "") -> VerifyResult:
+        """camera：在哪一路复核（发现问题的那一路）；不传为第一路。"""
         if wait and self.delay > 0:
             await asyncio.sleep(self.delay)
-        bf = self.buffer.latest_snapshot(quality=92)
+        buf = self.frames.buffer(camera or None)
+        bf = buf.latest_snapshot(quality=92) if buf else None
         if bf is None:
             return VerifyResult(False, "没有画面")
         img = resize_max_side(decode_jpeg(bf.jpeg), self.max_side)
@@ -66,7 +69,7 @@ class Verifier:
             ref_text = f"前 {len(refs)} 张是参考图（" + "；".join(f"图{i}是{label}" for i, (label, _) in enumerate(refs, 1)) + "），"
         fmt = getattr(self.vlm, "bbox_format", "0-1000")
         prompt = prompts.VERIFY_PROMPT.format(
-            scene=self._scene(), condition=duty.condition, evidence=evidence or "无", refs=ref_text,
+            scene=self._scene(camera), condition=duty.condition, evidence=evidence or "无", refs=ref_text,
             image_desc="最后一张当前监控画面" if refs else "当前监控画面",
             coord_rule="坐标" + COORD_RULES.get(fmt, COORD_RULES["0-1000"]))
         data = parse_json(await self.vlm.ask([*(j for _, j in refs), full], prompt,
@@ -79,7 +82,7 @@ class Verifier:
         images = [("复核画面", full)]
         if box:       # 放大确认
             zoom = encode_jpeg(crop_region(img, box, min_side=self.crop_min_side), 90)
-            z = parse_json(await self.vlm.ask([zoom], prompts.ZOOM_PROMPT.format(scene=self._scene(), condition=duty.condition),
+            z = parse_json(await self.vlm.ask([zoom], prompts.ZOOM_PROMPT.format(scene=self._scene(camera), condition=duty.condition),
                                               system=prompts.VERIFY_SYSTEM, json_mode=True))
             images.append(("放大复核", zoom))
             if not isinstance(z, dict) or not z.get("match") or z.get("confidence") == "低":

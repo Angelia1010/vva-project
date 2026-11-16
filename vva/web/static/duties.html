@@ -21,6 +21,7 @@
   td.state .why { display: block; margin-top: 2px; font-size: 12px; color: var(--alert-soft); white-space: normal; max-width: 140px; }
   td.dname .name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   td.dname .cond { margin-top: 3px; font-size: 12px; color: var(--ink-2); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.dname .cams { margin-top: 2px; font-size: 12px; color: #7FD8F7; }
   td.action { font-size: 13px; color: #D3DCE7; min-width: 170px; max-width: 260px; }
   td.action.warn { color: #F5D08A; }
   td.period { font-size: 13px; color: #D3DCE7; white-space: nowrap; }
@@ -122,7 +123,7 @@ function row(d) {
   const dot = d.temporary && d.state === "running" ? "temp" : (d.state === "running" ? "running" : d.state);
   const count = d.kind === "watch" ? d.today_count : "—";
   tr.innerHTML = `<td class="state"><span class="s ${d.state}"><span class="dot ${dot}" aria-hidden="true"></span>${STATE[d.state] || d.state}</span>${why}</td>
-    <td class="dname"><div class="name">${vva.esc(d.name)}${kind}${LEVEL[d.level] || ""}</div><div class="cond" title="${vva.esc(d.condition)}">${vva.esc(d.condition)}</div></td>
+    <td class="dname"><div class="name">${vva.esc(d.name)}${kind}${LEVEL[d.level] || ""}</div><div class="cond" title="${vva.esc(d.condition)}">${vva.esc(d.condition)}</div>${d.camera_text && d.camera_text !== "全部摄像头" ? `<div class="cams">摄像头：${vva.esc(d.camera_text)}</div>` : ""}</td>
     <td class="action ${/未设置/.test(d.action_text) ? "warn" : ""}">${vva.esc(d.action_text)}</td>
     <td class="period">${vva.esc(d.period_text)}${d.kind === "inspect" && d.last_result ? `<div class="sub" style="font-size:12px">上次：${vva.esc(d.last_result)}</div>` : ""}</td>
     <td class="num ${d.kind === "watch" && d.today_count ? "hot" : ""}">${count}</td>
@@ -153,7 +154,7 @@ function render() {
 }
 async function testDuty(d, b) {
   b.disabled = true; b.textContent = "检查中…";
-  try { const r = await vva.api("POST", "/api/duties/test", { id: d.id }); msg(`${d.name}：${r.match ? "命中" : "未命中"}。${r.evidence || ""}`, r.match ? "err" : "ok"); }
+  try { const r = await vva.api("POST", "/api/duties/test", { id: d.id, camera: (() => { try { return localStorage.getItem("vva-focus") || ""; } catch (e) { return ""; } })() }); msg(`${d.name}：${r.match ? "命中" : "未命中"}。${r.evidence || ""}`, r.match ? "err" : "ok"); }
   catch (e) { msg(e.message, "err"); }
   b.disabled = false; b.textContent = "试一下";
 }

@@ -18,9 +18,12 @@ class TimelineEntry:
     objects: list[str] = field(default_factory=list)
     activities: list[str] = field(default_factory=list)
     anomalies: list[str] = field(default_factory=list)
+    camera: str = ""                # 摄像头编号
+    camera_name: str = ""           # 摄像头名称（多路时写进文字，便于区分）
 
     def to_text(self) -> str:
-        parts = [f"[{fmt_ts(self.ts)}] {self.summary}"]
+        where = f"[{self.camera_name}]" if self.camera_name else ""
+        parts = [f"[{fmt_ts(self.ts)}]{where} {self.summary}"]
         if self.people_count is not None:
             parts.append(f"人数:{self.people_count}")
         if self.activities:
@@ -46,12 +49,15 @@ class Timeline:
         while self._items and self._items[0].ts < cutoff:
             self._items.popleft()
 
-    def query(self, minutes: float) -> list[TimelineEntry]:
+    def query(self, minutes: float, camera: str | None = None) -> list[TimelineEntry]:
         cutoff = time.time() - minutes * 60
-        return [e for e in self._items if e.ts >= cutoff]
+        return [e for e in self._items if e.ts >= cutoff and (not camera or e.camera == camera)]
 
-    def latest(self) -> TimelineEntry | None:
-        return self._items[-1] if self._items else None
+    def latest(self, camera: str | None = None) -> TimelineEntry | None:
+        for e in reversed(self._items):
+            if not camera or e.camera == camera:
+                return e
+        return None
 
     def __len__(self) -> int:
         return len(self._items)

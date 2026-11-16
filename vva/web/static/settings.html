@@ -7,16 +7,54 @@
 <title>设置 - 春雷问鉴</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
-  .layout { display: grid; grid-template-columns: minmax(0, 860px) 380px; gap: 20px; align-items: start; }
-  .form { min-width: 0; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .main { min-width: 0; padding: 0; display: flex; flex-direction: column; }
+  body.app .page > .layout > .main { overflow: hidden; }
+  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+  .toolbar h2 { margin: 0; font-size: 15px; }
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 16px 16px; }
   .side { display: flex; flex-direction: column; gap: 16px; }
-  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
   .entry { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid #1E3150; text-decoration: none; color: var(--ink); }
   .entry:hover { border-color: var(--cyan); color: var(--ink); }
   .entry b { display: block; }
   .entry span { color: var(--ink-2); font-size: 12px; }
   .entry .st { margin-left: auto; font-size: 12px; }
-  .savebar { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+
+  .st-block { padding: 14px 0 6px; }
+  .st-block + .st-block { border-top: 1px solid var(--rule); }
+  .st-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .st-head h3 { margin: 0; font-size: 16px; }
+  .st-head .sub { flex: 1 1 200px; min-width: 0; }
+  .st-head .ops { display: flex; gap: 14px; }
+  .st-head .ops button.link, .cam .ops button.link { text-decoration: none; }
+  .st-head .ops button.link:hover, .cam .ops button.link:hover { text-decoration: underline; }
+  .cams { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .cam { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px; border-radius: 8px;
+         background: var(--panel-2); border: 1px solid #1E3150; }
+  .cam.off { opacity: .6; }
+  .cam .shot { width: 112px; height: 63px; }
+  .cam .shot span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--ink-2); }
+  .cam .nm { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .cam .nm .id { font: 12px var(--digits); color: var(--ink-2); font-weight: 400; }
+  .cam .meta { font-size: 13px; color: var(--ink-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cam .right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .cam .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+  .cam .state.online { color: #7BE6B1; } .cam .state.offline, .cam .state.error { color: #F5D08A; }
+  .cam .ops { display: flex; gap: 14px; }
+  .empty-cams { padding: 14px; border-radius: 8px; border: 1px dashed var(--line); color: var(--ink-2); font-size: 13px; }
+
+  dialog { width: min(560px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); }
+  dialog::backdrop { background: rgba(4, 9, 18, .66); }
+  dialog h2 { margin: 0; padding: 16px 20px; font-size: 16px; border-bottom: 1px solid var(--rule); }
+  dialog .body { padding: 4px 20px 16px; max-height: min(66vh, 600px); overflow-y: auto; }
+  dialog .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding: 14px 20px; border-top: 1px solid var(--rule); background: var(--bar); border-radius: 0 0 12px 12px; }
+  dialog .foot .toast { margin-right: auto; }
+  dialog .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .seg.wide { display: flex; }
+  .testbox { display: flex; gap: 12px; align-items: flex-start; margin-top: 10px; }
+  .testbox img { width: 220px; border-radius: 6px; border: 1px solid var(--line); }
+  .testbox .res { font-size: 13px; }
 </style>
 </head>
 <body class="app">
@@ -37,23 +75,19 @@
 
 <div class="page">
   <div class="page-head">
-    <div><h1>设置</h1><p>岗位信息会显示在值守台和通知里，也会告诉春雷问鉴画面里是什么地方、有哪些规矩。</p></div>
+    <div><h1>设置</h1><p>一个岗位是一个现场（如“1 号仓库”），下面可以接多路摄像头（不同角度）。岗位的场景说明和每路摄像头的“看哪里”都会告诉春雷问鉴。</p></div>
     <span class="spacer"></span>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
   </div>
-  <div class="layout top">
-    <section class="panel form" aria-labelledby="t-station">
-      <h2 id="t-station">岗位信息</h2>
-      <label class="field" for="name">岗位名称</label>
-      <input id="name" type="text" placeholder="如：1 号仓库门口">
-      <label class="field" for="area">看哪里 <span class="muted">画面覆盖的区域、关键位置</span></label>
-      <textarea id="area" placeholder="如：仓库大门和装卸区，画面左侧是叉车通道，右侧是 3 号货架"></textarea>
-      <label class="field" for="scene">场景说明 <span class="muted">规章、常识，所有职责共用</span></label>
-      <textarea id="scene" placeholder="如：仓库内禁止吸烟；叉车通道禁止行人停留；员工都穿蓝色工服"></textarea>
-      <label class="field" for="owner">岗位负责人</label>
-      <input id="owner" type="text" placeholder="如：张三">
-      <div style="margin-top:16px"><label class="switch"><input type="checkbox" id="paused">暂停值守（所有职责都不判断，指令问答照常）</label></div>
-      <div class="savebar"><button type="button" class="primary" id="save">保存</button></div>
+  <div class="layout">
+    <section class="panel main" aria-labelledby="t-cams">
+      <div class="toolbar">
+        <h2 id="t-cams">岗位与摄像头</h2><span class="sub" id="cam-count"></span>
+        <span style="flex:1"></span>
+        <button type="button" id="btn-add-station">添加岗位</button>
+        <button type="button" class="primary" id="btn-add-cam">添加摄像头</button>
+      </div>
+      <div class="list" id="list"></div>
     </section>
     <aside class="side">
       <section class="panel" aria-labelledby="t-channels">
@@ -64,7 +98,7 @@
         </div>
       </section>
       <section class="panel" aria-labelledby="t-more">
-        <h2 id="t-more">识别与知识</h2>
+        <h2 id="t-more">学习与知识</h2>
         <div style="display:flex;flex-direction:column;gap:10px">
           <a class="entry" href="/skills"><div><b>自学习</b><span>教它认识特定目标：参考图、判断标准、热词</span></div></a>
           <a class="entry" href="/knowledge"><div><b>知识库</b><span>规章、规程、设备手册</span></div></a>
@@ -73,15 +107,176 @@
     </aside>
   </div>
 </div>
+
+<dialog id="st-dlg" aria-labelledby="st-title">
+  <h2 id="st-title">岗位</h2>
+  <div class="body">
+    <label class="field" for="s-name">岗位名称</label>
+    <input id="s-name" type="text" maxlength="30" placeholder="如：1 号仓库、2 号车间">
+    <label class="field" for="s-scene">场景说明 <span class="muted">规章、常识，这个岗位的所有摄像头共用</span></label>
+    <textarea id="s-scene" placeholder="如：仓库内禁止吸烟；叉车通道禁止行人停留；员工都穿蓝色工服"></textarea>
+    <label class="field" for="s-owner">岗位负责人</label>
+    <input id="s-owner" type="text" placeholder="如：张三">
+    <div style="margin-top:16px"><label class="switch"><input type="checkbox" id="s-paused">暂停值守（这个岗位的摄像头都不判断职责，指令问答照常）</label></div>
+  </div>
+  <div class="foot"><span class="toast err" id="st-err" role="alert"></span><button type="button" id="st-cancel">取消</button><button type="button" class="primary" id="st-ok">保存</button></div>
+</dialog>
+
+<dialog id="cam-dlg" aria-labelledby="cam-title">
+  <h2 id="cam-title">摄像头</h2>
+  <div class="body">
+    <div class="two">
+      <div><label class="field" for="c-name">名称</label><input id="c-name" type="text" maxlength="20" placeholder="如：大门、装卸区"></div>
+      <div><label class="field" for="c-station">所属岗位</label><select id="c-station" class="field"></select></div>
+    </div>
+    <span class="field" style="display:block;margin:12px 0 6px;font-size:13px;font-weight:500;color:var(--ink-3)">接入方式</span>
+    <div class="seg wide" role="group" aria-label="接入方式" id="c-type"></div>
+    <div id="box-stream">
+      <label class="field" for="c-url">视频地址 <span class="muted">海康、大华都支持 RTSP，建议用子码流</span></label>
+      <input id="c-url" type="text" placeholder="rtsp://admin:密码@192.168.1.64:554/Streaming/Channels/102">
+    </div>
+    <div id="box-local"><label class="field" for="c-index">USB 摄像头编号 <span class="muted">一般是 0；服务器上插了多个时依次是 1、2</span></label><input id="c-index" type="number" min="0" max="9" value="0"></div>
+    <div id="box-custom"><label class="field" for="c-class">自定义接入的类</label><input id="c-class" type="text" placeholder="examples/custom_video_source.py:TestPatternSource"></div>
+    <p class="sub" id="box-push" style="margin:10px 0 0">保存后在值守台选中这一路，点“开启摄像头”用浏览器推送画面；外部程序可以向 /api/ingest/frame?cam=编号 推送 JPEG。</p>
+    <div id="test-row" style="margin-top:12px"><button type="button" id="c-test">测试连接</button><div id="c-test-res"></div></div>
+    <label class="field" for="c-area">看哪里 <span class="muted">画面覆盖的区域、关键位置</span></label>
+    <textarea id="c-area" placeholder="如：仓库大门和装卸区，画面左侧是叉车通道"></textarea>
+    <label class="field" for="c-note">这一路的额外说明 <span class="muted">可选</span></label>
+    <input id="c-note" type="text" placeholder="如：画面右上角的红灯是设备运行指示灯">
+    <div style="margin-top:16px"><label class="switch"><input type="checkbox" id="c-enabled">启用</label></div>
+  </div>
+  <div class="foot"><span class="toast err" id="cam-err" role="alert"></span><button type="button" id="cam-cancel">取消</button><button type="button" class="primary" id="cam-ok">保存</button></div>
+</dialog>
+
 <script src="/static/console.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let msgTimer = null;
-function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
+let data = { cameras: [], stations: [], types: {}, max: 4 }, editingSt = null, editingCam = null, camType = "stream", msgTimer = null;
+function msg(text, cls) { const m = $("msg"); if (!m) return; m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
+const TYPE_SHORT = { stream: "网络摄像头", push: "推送", local: "USB 摄像头", custom: "自定义" };
+
 async function load() {
-  const s = await vva.api("GET", "/api/station");
-  for (const k of ["name", "area", "scene", "owner"]) $(k).value = s[k] || "";
-  $("paused").checked = !!s.paused;
+  try { data = await vva.api("GET", "/api/cameras"); } catch (e) { msg(e.message, "err"); return; }
+  $("cam-count").textContent = `已接入 ${data.cameras.length} / ${data.max} 路`;
+  $("btn-add-cam").disabled = data.cameras.length >= data.max;
+  $("btn-add-cam").title = data.cameras.length >= data.max ? `最多 ${data.max} 路` : "";
+  const list = $("list"); list.innerHTML = "";
+  for (const st of data.stations) {
+    const cams = data.cameras.filter(c => c.station_id === st.id);
+    const el = document.createElement("article"); el.className = "st-block";
+    const info = [st.owner ? "负责人 " + st.owner : "", st.scene].filter(Boolean).join(" · ");
+    el.innerHTML = `<div class="st-head"><h3>${vva.esc(st.name)}</h3>${st.paused ? '<span class="tag important">已暂停值守</span>' : ""}
+        <span class="sub">${vva.esc(info || "还没写场景说明")}</span>
+        <span class="ops"><button type="button" class="link" data-a="edit">编辑岗位</button>
+          <button type="button" class="link" data-a="pause">${st.paused ? "恢复值守" : "暂停值守"}</button>
+          ${st.default ? "" : '<button type="button" class="link danger" data-a="del">删除</button>'}</span></div>
+      <div class="cams"></div>`;
+    el.querySelector('[data-a="edit"]').onclick = () => openStation(st);
+    el.querySelector('[data-a="pause"]').onclick = async () => {
+      try { await vva.api("PUT", "/api/stations/" + st.id, { paused: !st.paused }); load(); } catch (e) { msg(e.message, "err"); }
+    };
+    const del = el.querySelector('[data-a="del"]');
+    if (del) del.onclick = async () => {
+      if (!confirm(`删除岗位“${st.name}”？`)) return;
+      try { await vva.api("DELETE", "/api/stations/" + st.id); load(); } catch (e) { msg(e.message, "err"); }
+    };
+    const box = el.querySelector(".cams");
+    if (!cams.length) box.innerHTML = `<div class="empty-cams">这个岗位还没有摄像头。点右上角“添加摄像头”，所属岗位选“${vva.esc(st.name)}”。</div>`;
+    for (const c of cams) box.appendChild(camRow(c));
+    list.appendChild(el);
+  }
+}
+
+function camRow(c) {
+  const el = document.createElement("div"); el.className = "cam" + (c.enabled ? "" : " off");
+  const st = c.status || {}, on = st.state === "online";
+  const where = c.type === "stream" ? (c.source.url || "") : c.type === "local" ? "USB 摄像头 " + (c.source.index || 0) : c.type_label;
+  el.innerHTML = `<div class="shot">${on ? `<img src="/api/cameras/${encodeURIComponent(c.id)}/snapshot.jpg?t=${Date.now()}" alt="">` : `<span>${vva.esc(st.text || "无画面")}</span>`}</div>
+    <div style="min-width:0"><div class="nm">${vva.esc(c.name)}<span class="id">${vva.esc(c.id)}</span><span class="tag">${vva.esc(TYPE_SHORT[c.type] || c.type)}</span></div>
+      <div class="meta" title="${vva.esc(c.area)}">${vva.esc(c.area ? "看哪里：" + c.area : "还没写看哪里")}</div>
+      <div class="meta" title="${vva.esc(where)}">${vva.esc(where)}</div></div>
+    <div class="right"><span class="state ${st.state || ""}"><span class="dot ${on ? "running" : ""}" aria-hidden="true"></span>${vva.esc(st.text || "")}</span>
+      <span class="ops"><button type="button" class="link" data-a="edit">编辑</button><button type="button" class="link danger" data-a="del">删除</button></span></div>`;
+  el.querySelector('[data-a="edit"]').onclick = () => openCam(c);
+  el.querySelector('[data-a="del"]').onclick = async () => {
+    if (!confirm(`删除摄像头“${c.label}”？只盯这一路的职责会显示异常，告警记录会保留。`)) return;
+    try {
+      const r = await vva.api("DELETE", "/api/cameras/" + c.id);
+      msg(r.duties_affected && r.duties_affected.length ? "已删除。请检查这些职责的摄像头设置：" + r.duties_affected.join("、") : "已删除", "ok"); load();
+    } catch (e) { msg(e.message, "err"); }
+  };
+  return el;
+}
+
+// ---------------- 岗位
+function openStation(st) {
+  editingSt = st;
+  $("st-title").textContent = st ? "编辑岗位" : "添加岗位";
+  $("s-name").value = st ? st.name : ""; $("s-scene").value = st ? st.scene || "" : ""; $("s-owner").value = st ? st.owner || "" : "";
+  $("s-paused").checked = st ? !!st.paused : false; $("st-err").textContent = "";
+  $("st-dlg").showModal();
+}
+$("btn-add-station").onclick = () => openStation(null);
+$("st-cancel").onclick = () => $("st-dlg").close();
+$("st-ok").onclick = async () => {
+  const body = { name: $("s-name").value.trim(), scene: $("s-scene").value.trim(), owner: $("s-owner").value.trim(), paused: $("s-paused").checked };
+  try {
+    await (editingSt ? vva.api("PUT", "/api/stations/" + editingSt.id, body) : vva.api("POST", "/api/stations", body));
+    $("st-dlg").close(); msg("已保存", "ok"); load();
+  } catch (e) { $("st-err").textContent = e.message; }
+};
+
+// ---------------- 摄像头
+function syncType() {
+  $("c-type").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === camType)));
+  $("box-stream").style.display = camType === "stream" ? "" : "none";
+  $("box-local").style.display = camType === "local" ? "" : "none";
+  $("box-custom").style.display = camType === "custom" ? "" : "none";
+  $("box-push").style.display = camType === "push" ? "" : "none";
+  $("test-row").style.display = camType === "stream" || camType === "local" ? "" : "none";
+}
+function openCam(c) {
+  editingCam = c;
+  $("cam-title").textContent = c ? `编辑摄像头 ${c.id}` : "添加摄像头";
+  $("c-type").innerHTML = Object.keys(data.types).map(k => `<button type="button" data-v="${k}">${TYPE_SHORT[k] || k}</button>`).join("");
+  $("c-type").querySelectorAll("button").forEach(b => b.onclick = () => { camType = b.dataset.v; syncType(); });
+  $("c-station").innerHTML = data.stations.map(s => `<option value="${vva.esc(s.id)}">${vva.esc(s.name)}</option>`).join("");
+  camType = c ? c.type : "stream";
+  $("c-name").value = c ? c.name : ""; $("c-station").value = c ? c.station_id : (data.stations[0] || {}).id || "default";
+  $("c-url").value = c && c.type === "stream" ? c.source.url || "" : "";
+  $("c-index").value = c && c.type === "local" ? c.source.index || 0 : 0;
+  $("c-class").value = c && c.type === "custom" ? c.source.class || "" : "";
+  $("c-area").value = c ? c.area || "" : ""; $("c-note").value = c ? c.note || "" : "";
+  $("c-enabled").checked = c ? c.enabled : true;
+  $("cam-err").textContent = ""; $("c-test-res").innerHTML = "";
+  syncType(); $("cam-dlg").showModal();
+}
+function sourceBody() {
+  if (camType === "stream") return { type: "stream", url: $("c-url").value.trim() };
+  if (camType === "local") return { type: "local", index: Number($("c-index").value || 0) };
+  if (camType === "custom") return { type: "custom", class: $("c-class").value.trim() };
+  return { type: "push" };
+}
+$("btn-add-cam").onclick = () => openCam(null);
+$("cam-cancel").onclick = () => $("cam-dlg").close();
+$("c-test").onclick = async () => {
+  const res = $("c-test-res"); res.innerHTML = '<p class="sub">正在连接，最多等 15 秒…</p>';
+  try {
+    const r = await vva.api("POST", "/api/cameras/test", { source: sourceBody(), id: editingCam ? editingCam.id : "" });
+    res.innerHTML = r.ok ? `<div class="testbox">${r.image ? `<img src="${r.image}" alt="测试画面">` : ""}<div class="res" style="color:#7BE6B1">${vva.esc(r.note || "连接成功，这是刚拉到的一帧画面")}</div></div>`
+                         : `<p class="sub" style="color:var(--alert-soft)">${vva.esc(r.error)}</p>`;
+  } catch (e) { res.innerHTML = `<p class="sub" style="color:var(--alert-soft)">${vva.esc(e.message)}</p>`; }
+};
+$("cam-ok").onclick = async () => {
+  const body = { name: $("c-name").value.trim(), station_id: $("c-station").value, source: sourceBody(),
+                 area: $("c-area").value.trim(), note: $("c-note").value.trim(), enabled: $("c-enabled").checked };
+  try {
+    await (editingCam ? vva.api("PUT", "/api/cameras/" + editingCam.id, body) : vva.api("POST", "/api/cameras", body));
+    $("cam-dlg").close(); msg("已保存，画面会在几秒内出现", "ok"); load();
+  } catch (e) { $("cam-err").textContent = e.message; }
+};
+
+async function loadChannels() {
   for (const ch of ["dingtalk", "feishu"]) {
     try {
       const r = await vva.api("GET", "/api/channels/" + ch);
@@ -92,11 +287,8 @@ async function load() {
     } catch (e) {}
   }
 }
-$("save").onclick = async () => {
-  const body = { name: $("name").value.trim(), area: $("area").value.trim(), scene: $("scene").value.trim(), owner: $("owner").value.trim(), paused: $("paused").checked };
-  try { await vva.api("PUT", "/api/station", body); msg("已保存", "ok"); } catch (e) { msg("没有保存：" + e.message, "err"); }
-};
-load().catch((e) => msg(e.message, "err"));
+load(); loadChannels();
+setInterval(() => { if (!$("cam-dlg").open && !$("st-dlg").open) load(); }, 15000);
 </script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 """应用编排：按配置组装各模块，并负责一轮对话的调度（打断、流式输出、主动提醒）。
 
 各模块之间只通过接口和事件总线连接：
-  视频源 ──帧──▶ 帧缓存 ◀── 工具 / 后台观察 ──▶ 多模态大模型
+  摄像头 ×N ──帧──▶ 各自的帧缓存（CameraHub）◀── 工具 / 每路的后台观察 ──▶ 视觉调度器 ──▶ 多模态大模型
   语音会话 ──文字──▶ App.handle_user_text ──▶ 智能体 ──文字──▶ 语音会话 / 网页
   后台观察 ──疑似命中──▶ 职责引擎 ──复核──▶ 告警（data/ops.db）──▶ 通知路由 ──事件──▶ 钉钉 / 飞书 / 值守台 / 现场播报
   后台观察 / 提醒 / 指令 ──事件──▶ 长期记忆（SQLite + 关键帧）◀── 记忆工具
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,9 +22,9 @@ from vva.agent.tools import VisionTools
 from vva.core import turn
 from vva.core.bus import TOPIC_ALERT, TOPIC_UI, EventBus
 from vva.perception.observer import Observer
+from vva.perception.pool import ObserverPool
+from vva.perception.scheduler import Priority, VisionScheduler
 from vva.perception.timeline import Timeline
-from vva.video.factory import create_video_source
-from vva.video.frame_buffer import FrameBuffer
 from vva.voice.text_split import AnswerLimiter, SentenceSplitter, ThinkFilter
 
 log = logging.getLogger(__name__)
@@ -47,41 +48,56 @@ class App:
         self.cfg = cfg
         self.bus = EventBus()
 
-        # 视频
-        self.video = create_video_source(cfg["video"])
-        self.buffer = FrameBuffer(**cfg["video"]["buffer"])
-        self.video.on_frame(self.buffer.add)
-
-        # 模型
+        # 模型：视觉模型的调用统一经过调度器排队（用户提问优先，其次复核、职责检查、时间线）
         from vva.models import clients
         m = cfg["models"]
         self.llm = llm or clients.ChatModel(m["agent_llm"])
         self.vlm = vlm or clients.VisionModel(m["vlm"])
+        self.vision = VisionScheduler(self.vlm, (cfg.get("vision") or {}).get("max_concurrency", 6))
+        user_vlm = self.vision.client(Priority.USER, camera=lambda: turn.current_camera() or "")
 
-        # 岗位 + 职责（data/ops.db）
+        # 岗位 + 摄像头（data/ops.db）：多个岗位，每个岗位多个角度
+        from vva.cameras import CameraHub, CameraStore, CurrentBuffer
         from vva.core.sqlite import SqliteDB
         from vva.duties import DutyManager
         from vva.station import StationStore
         self.ops_db = SqliteDB(cfg["duties"]["db"])
         self.station = StationStore(self.ops_db, cfg.get("station") or {})
+        cs = cfg.get("camera_settings") or {}
+        self.cameras = CameraHub(CameraStore(self.ops_db), self.station, cfg["video"]["buffer"],
+                                 max_cameras=cs.get("max", 4), offline_after=cs.get("offline_after_s", 15),
+                                 browser_mode=bool(cfg.get("browser_mode")))
+        if self.cameras.seed(cfg.get("cameras") or [], legacy_video=cfg["video"], legacy_area=self.station.station.area):
+            log.info("已按配置建立 %d 路摄像头", len(self.cameras.list()))
+        self.focus_camera: str | None = None        # 值守台上正在看的那一路（网页对话、语音默认看它）
+        self.current_buffer = CurrentBuffer(self.cameras)
+
+        # 职责（data/ops.db）
         self.timeline = Timeline(cfg["observer"]["timeline_minutes"])
-        self.duties = DutyManager(cfg["duties"], self.ops_db, self.bus, self.buffer, self.vlm, self.llm,
+        self.duties = DutyManager(cfg["duties"], self.ops_db, self.bus, self.cameras,
+                                  self.vision.client(Priority.VERIFY), self.llm,
                                   report=self.report, scene=self.scene_text, station_name=lambda: self.station.station.name,
                                   observe_interval=cfg["observer"].get("rule_check_interval", 8.0))
+        self.duties.scheduler.vlm = self.vision.client(Priority.DUTY)
+        self.duties.camera_info = self.cameras.info
+        self.duties.camera_options = self.camera_options
+        self.duties.resolve_camera = self.cameras.resolve
         from vva.actions import ActionService
         self.actions = ActionService(self.ops_db, self.bus, shots_dir=cfg.get("actions", {}).get("dir", "data/actions"),
                                      speak=self._say_on_site, notify=self.send_notice, snapshot=self.snapshot,
                                      station_name=lambda: self.station.station.name, problem=self._action_problem)
+        self.actions.camera_info = self.cameras.info
+        self.actions.resolve_camera = self.cameras.resolve
         self.rules = self.duties.book           # 职责清单兼容旧的监控规则接口（后台观察、技能使用）
-        self.rules.paused = self.station.station.paused
-        vision_tools = VisionTools(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
+        self.rules.paused = self.station.all_paused()
+        vision_tools = VisionTools(self.cameras, user_vlm, self.timeline, self.rules, self.bus, **cfg["agent"])
 
-        # 技能（可关闭）
+        # 自学习（技能，可关闭）
         self.skills = None
         if cfg["skills"].get("enabled", True):
             from vva.skills import SkillManager
-            self.skills = SkillManager(cfg["skills"], cfg["video"].get("source_id", "cam0"))
-            self.skills.load_plugins(self.buffer, self.vlm, self.bus)
+            self.skills = SkillManager(cfg["skills"], None)
+            self.skills.load_plugins(self.current_buffer, user_vlm, self.bus)
 
         # 长期记忆（可关闭）
         self.memory = None
@@ -89,7 +105,8 @@ class App:
             from vva.memory import LongTermMemory
             mem_cfg = {"look_max_tokens": cfg["agent"]["look_max_tokens"],
                        "scene_hint": cfg["agent"].get("scene_hint", ""), **cfg["memory"]}
-            self.memory = LongTermMemory(mem_cfg, self.bus, self.llm, self.vlm)
+            self.memory = LongTermMemory(mem_cfg, self.bus, self.llm, user_vlm)
+            self.memory.tools.resolve_camera = self.cameras.resolve
             if not len(self.rules):             # 旧版的监控规则存在长期记忆里：首次启动时转成职责
                 n = self.rules.load(self.memory.store.load_rules())
                 if n:
@@ -104,7 +121,7 @@ class App:
         skill_tools = None
         if self.skills:
             from vva.skills import SkillTools
-            skill_tools = SkillTools(self.skills, self.buffer, self.vlm, self.bus, **cfg["agent"])
+            skill_tools = SkillTools(self.skills, self.current_buffer, user_vlm, self.bus, **cfg["agent"])
             self.skills.apply_rules(self.rules)
             self.skills.on_change(lambda: self.skills.apply_rules(self.rules))   # 网页上新增的规则模板立即生效
             self.duties.verifier.references = self.skills.references_for_text
@@ -116,6 +133,8 @@ class App:
         if self.skills:
             self.agent.tool_visible = self.skills.tool_visible
         self.conversations = ConversationStore(cfg["agent"]["max_history_turns"])
+
+        # 后台观察：每路摄像头一个
         obs_cfg = dict(cfg["observer"])
         if not obs_cfg.get("scene_hint"):
             obs_cfg["scene_hint"] = cfg["agent"].get("scene_hint", "")
@@ -123,8 +142,11 @@ class App:
         if self.skills:
             obs_cfg["references"] = self.skills.references_for_text
         obs_cfg["on_hit"] = self.duties.engine.on_hit
-        self.observer = Observer(self.buffer, self.vlm, self.timeline, self.rules, self.bus, **obs_cfg) \
-            if obs_cfg.get("enabled", True) else None
+        self._obs_cfg = obs_cfg
+        self.observers = ObserverPool(self.cameras, self._make_observer) if obs_cfg.get("enabled", True) else None
+        self.cameras.on_change(self._cameras_changed)
+        self.station.on_change(self._stations_changed)
+        self._offline: dict[str, dict[str, Any]] = {}     # 摄像头 → {"since", "alert_id"}
 
         # 语音
         audio_on = cfg["audio"]["enabled"] if enable_audio is None else enable_audio
@@ -162,6 +184,87 @@ class App:
         self.duties.target_problem = self.target_problem
         self.rules.on_change(lambda _: self._announce_duties())
 
+    # ---------------------------------------------------------------- 摄像头
+    @property
+    def buffer(self) -> Any:
+        """第一路摄像头的帧缓存（兼容旧的单摄像头接口）。"""
+        return self.cameras.buffer()
+
+    @property
+    def video(self) -> Any:
+        r = self.cameras.runtime(self.cameras.default_id())
+        return r.source if r else None
+
+    @property
+    def observer(self) -> Observer | None:
+        """第一路的后台观察（兼容旧接口）。"""
+        if not self.observers:
+            return None
+        self.observers.sync()
+        return self.observers.get(self.cameras.default_id())
+
+    def _make_observer(self, cam_id: str) -> Observer:
+        obs = Observer(self.cameras.buffer(cam_id), None, self.timeline, self.rules, self.bus, **self._obs_cfg,
+                       camera_id=cam_id, camera_name=lambda: self.cameras.label(cam_id),
+                       paused=lambda: bool(self.cameras.station_of(cam_id).paused))
+        # 有生效职责的摄像头按“职责检查”排队，否则只是记时间线，排在最后
+        obs.vlm = self.vision.client(lambda: Priority.DUTY if obs._watching() else Priority.TIMELINE,
+                                     key=f"observe:{cam_id}", camera=cam_id)
+        return obs
+
+    def camera_options(self) -> list[dict[str, str]]:
+        return [{"id": c.id, "name": c.name, "label": self.cameras.label(c.id)} for c in self.cameras.enabled()]
+
+    def set_focus(self, cam_id: str | None) -> None:
+        """值守台切换画面时调用：之后网页文字和语音提问默认看这一路。"""
+        if cam_id and self.cameras.get(cam_id):
+            self.focus_camera = cam_id
+
+    def _cameras_changed(self) -> None:
+        if self.observers:
+            self.observers.sync()
+        self.bus.publish(TOPIC_UI, {"type": "cameras_changed", "session": None})
+        self.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})
+
+    def _stations_changed(self) -> None:
+        self.rules.paused = self.station.all_paused()
+        self.bus.publish(TOPIC_UI, {"type": "cameras_changed", "session": None})
+        self.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})
+
+    OFFLINE_DUTY_ID = "camera_offline"
+
+    async def _camera_health_loop(self) -> None:
+        """摄像头在线状态：变化时通知网页；网络摄像头断开超过设定时间发一条“摄像头离线”告警，恢复后记进处理经过。"""
+        from vva.duties.model import Duty
+        alert_after = float((self.cfg.get("camera_settings") or {}).get("offline_alert_s", 120))
+        offline_duty = Duty(id=self.OFFLINE_DUTY_ID, name="摄像头离线", condition="摄像头断开连接，没有画面",
+                            level="important", verify=False)
+        while True:
+            try:
+                now = time.time()
+                for cam, online in self.cameras.check_health(now):
+                    self.bus.publish(TOPIC_UI, {"type": "camera_status", "session": None, "camera": cam.id,
+                                                "online": online, "status": self.cameras.status(cam.id)})
+                    rec = self._offline.pop(cam.id, None) if online else None
+                    if online and rec and rec.get("alert_id"):
+                        self.duties.alerts.add_event(rec["alert_id"], f"{self.cameras.label(cam.id)} 已恢复画面")
+                    if not online:
+                        r = self.cameras.runtime(cam.id)
+                        if r and r.ever_online and self.cameras.effective_type(cam) != "push":
+                            self._offline[cam.id] = {"since": now, "alert_id": None}
+                for cid, rec in list(self._offline.items()):
+                    if rec["alert_id"] is None and now - rec["since"] >= alert_after and alert_after > 0:
+                        mins = int((now - rec["since"]) // 60) or 1
+                        alert = await self.duties.engine.raise_alert(
+                            offline_duty, f"{self.cameras.label(cid)} 已经 {mins} 分钟没有画面，请检查网络和摄像头电源",
+                            [], kind="offline", camera=cid)
+                        rec["alert_id"] = alert.id
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("检查摄像头状态出错")
+            await asyncio.sleep(5)
+
     DUTY_NOTE = "【职责清单已更新】"
 
     def _announce_duties(self) -> None:
@@ -171,20 +274,64 @@ class App:
             conv.replace_note(self.DUTY_NOTE, text)
 
     # ---------------------------------------------------------------- 岗位、场景、通知对象
-    def scene_text(self) -> str:
-        st = self.station.station
-        return "；".join(x for x in (st.area, st.scene, self.cfg["agent"].get("scene_hint", "")) if x)
+    def scene_text(self, camera: str | None = None) -> str:
+        """场景说明：这一路看哪里 + 所在岗位的规章 + 这一路的额外说明。"""
+        cam = self.cameras.get(camera) if camera else None
+        st = self.cameras.station_of(camera) if camera else self.station.station
+        area = cam.area if cam and cam.area else st.area
+        return "；".join(x for x in (area, st.scene, cam.note if cam else "", self.cfg["agent"].get("scene_hint", "")) if x)
 
-    def _observer_hint(self) -> str:
-        parts = [self.station.station.prompt_block()]
+    def _observer_hint(self, camera: str | None = None) -> str:
+        cam = self.cameras.get(camera) if camera else None
+        st = self.cameras.station_of(camera) if camera else self.station.station
+        lines = [f"岗位：{st.name}"]
+        if cam and len(self.cameras.list()) > 1:
+            lines.append(f"摄像头：{cam.name}")
+        area = cam.area if cam and cam.area else st.area
+        if area:
+            lines.append(f"画面范围：{area}")
+        if st.scene:
+            lines.append(f"场景说明：{st.scene}")
+        if cam and cam.note:
+            lines.append(cam.note)
         if self.skills:
-            parts.append(self.skills.observer_hint())
-        return "\n".join(p for p in parts if p)
+            lines.append(self.skills.observer_hint(camera))
+        return "\n".join(p for p in lines if p)
+
+    def cameras_prompt(self) -> str:
+        """系统提示词里的“岗位与摄像头”。只有一路时保持原来的简洁写法。"""
+        cams = self.cameras.list()
+        if len(cams) <= 1:
+            st = self.cameras.station_of(cams[0].id if cams else None)
+            cam = cams[0] if cams else None
+            block = f"岗位：{st.name}"
+            area = cam.area if cam and cam.area else st.area
+            if area:
+                block += f"\n画面范围：{area}"
+            if st.scene:
+                block += f"\n场景说明：{st.scene}"
+            return f"\n## 岗位\n{block}\n" + (f"岗位负责人：{st.owner}\n" if st.owner else "")
+        lines = []
+        for st in self.station.list():
+            mine = [c for c in cams if c.station_id == st.id]
+            if not mine:
+                continue
+            extra = "；".join(x for x in (f"负责人 {st.owner}" if st.owner else "", f"场景说明：{st.scene}" if st.scene else "",
+                                         "已暂停值守" if st.paused else "") if x)
+            lines.append(f"- 岗位「{st.name}」" + (f"（{extra}）" if extra else ""))
+            for c in mine:
+                status = self.cameras.status(c.id)["text"]
+                lines.append(f"  - {c.id} {c.name}：{c.area or '未写看哪里'}；{status}")
+        focus = turn.current_camera()
+        tip = (f"用户此刻在值守台看的是：{focus} {self.cameras.label(focus)}。用户没说哪一路时，看画面、回看、定位等都默认看这一路。"
+               if focus and self.cameras.get(focus) else
+               "这个对话没有默认的摄像头：用户问画面却没说哪一路时，先问清楚，或在明显要汇总时用 camera=全部。")
+        return ("\n## 岗位与摄像头（实时，以这里为准）\n" + "\n".join(lines) + "\n" + tip +
+                "\n用户说“大门”“2 号”“装卸区那边”时，把它填进工具的 camera 参数。回答里提到画面时说明是哪一路。\n")
 
     def _extra_prompt(self) -> str:
-        st = self.station.station
-        block = f"\n## 岗位\n{st.prompt_block()}\n" + (f"岗位负责人：{st.owner}\n" if st.owner else "")
-        return block + self.duties.prompt_block() + self.actions.prompt_block() + (self.skills.prompt_block() if self.skills else "")
+        return (self.cameras_prompt() + self.duties.prompt_block() + self.actions.prompt_block()
+                + (self.skills.prompt_block() if self.skills else ""))
 
     def notify_targets(self) -> list[dict[str, str]]:
         """可选的通知对象：值守台、现场播报、各入口的默认告警群和最近发过消息的群。"""
@@ -276,10 +423,11 @@ class App:
     # ---------------------------------------------------------------- 生命周期
     async def start(self) -> None:
         self.bus.bind_loop(asyncio.get_running_loop())
-        self.video.start()
-        log.info("视频源：%s", self.video.describe())
-        if self.observer:
-            self._tasks.append(asyncio.create_task(self.observer.run(), name="observer"))
+        self.cameras.start()
+        log.info("摄像头：%s", "、".join(f"{c.id} {self.cameras.label(c.id)}" for c in self.cameras.enabled()) or "无")
+        if self.observers:
+            self.observers.start()
+        self._tasks.append(asyncio.create_task(self._camera_health_loop(), name="camera-health"))
         self._tasks.append(asyncio.create_task(self._alert_loop(), name="alerts"))
         self._tasks += [asyncio.create_task(c) for c in self.duties.background_tasks()]
         if self.memory:
@@ -301,7 +449,9 @@ class App:
             t.cancel()
         if self.voice:
             await self.voice.stop()
-        self.video.stop()
+        if self.observers:
+            self.observers.stop()
+        self.cameras.stop()
         if self.memory:
             await self.memory.close()
         if self.knowledge:
@@ -341,22 +491,28 @@ class App:
         """把系统主动说过的话（如告警）记进某个会话，之后可以接着追问。"""
         self.conversations.get(session).add_note(text)
 
-    async def _start(self, text: str, source: str, session: str, readonly: bool) -> asyncio.Task | None:
+    async def _start(self, text: str, source: str, session: str, readonly: bool,
+                     camera: str | None = None) -> asyncio.Task | None:
         text = text.strip()
         if not text:
             return None
         await self.interrupt(session)       # 同一会话里，新的输入会打断正在进行的回答
-        self.bus.publish(TOPIC_UI, {"type": "user", "text": text, "source": source, "session": session})
+        if camera:
+            self.set_focus(camera)
+        cam = (camera or self.focus_camera) if session == WEB_SESSION else camera
+        if cam and not self.cameras.get(cam):
+            cam = None
+        self.bus.publish(TOPIC_UI, {"type": "user", "text": text, "source": source, "session": session, "camera": cam or ""})
         speak = session == WEB_SESSION and self.voice is not None
-        if self.observer:                   # 问答优先：后台观察让出一个周期的模型
-            self.observer.hold(self.observer.interval * 2)
-        task = asyncio.create_task(self._run_turn(text, session, speak, readonly))
+        # 问答优先：视觉调度器里用户提问排在最前，不用再让后台观察停下
+        task = asyncio.create_task(self._run_turn(text, session, speak, readonly, cam))
         self._turns[session] = task
         return task
 
-    async def handle_user_text(self, text: str, source: str = "text", session: str = WEB_SESSION) -> None:
-        """网页文字、语音的入口：开始回答后立即返回，回答通过事件流式推送。"""
-        await self._start(text, source, session, readonly=False)
+    async def handle_user_text(self, text: str, source: str = "text", session: str = WEB_SESSION,
+                               camera: str | None = None) -> None:
+        """网页文字、语音的入口：开始回答后立即返回，回答通过事件流式推送。camera：用户正在看的那一路。"""
+        await self._start(text, source, session, readonly=False, camera=camera)
 
     async def ask(self, text: str, session: str, source: str = "api", readonly: bool = False) -> Reply:
         """飞书等入口：等待回答完成，返回文字和本轮看过的画面。"""
@@ -368,8 +524,8 @@ class App:
         except asyncio.CancelledError:
             return Reply("", interrupted=True)
 
-    async def _run_turn(self, text: str, session: str, speak: bool, readonly: bool) -> Reply:
-        attachments = turn.begin(session)
+    async def _run_turn(self, text: str, session: str, speak: bool, readonly: bool, camera: str | None = None) -> Reply:
+        attachments = turn.begin(session, camera)
         conv = self.conversations.get(session, readonly)
         splitter, think = SentenceSplitter(), ThinkFilter()
         limiter = AnswerLimiter(self.cfg["agent"].get("max_answer_chars", 0))
@@ -427,9 +583,10 @@ class App:
         from vva.memory.report import build_report
         return await build_report(self.memory.store, self.llm, start, end)
 
-    def snapshot(self, max_side: int = 1280) -> bytes | None:
-        """当前画面的 JPEG，供告警推送等使用。"""
-        bf = self.buffer.latest_snapshot(max_side=max_side, quality=85)
+    def snapshot(self, max_side: int = 1280, camera: str | None = None) -> bytes | None:
+        """某一路（默认本轮对话在看的那一路，没有则第一路）当前画面的 JPEG，供告警推送、抓拍等使用。"""
+        buf = self.cameras.buffer(camera or turn.current_camera() or None)
+        bf = buf.latest_snapshot(max_side=max_side, quality=85) if buf else None
         return bf.jpeg if bf else None
 
     # ---------------------------------------------------------------- 主动提醒
@@ -441,7 +598,8 @@ class App:
             if alert.get("kind", "alert") != "alert":
                 continue
             targets = alert.get("targets")
-            text = f"提醒：{alert['condition']}。{alert.get('evidence') or ''}".strip()
+            where = alert.get("camera_name") if len(self.cameras.list()) > 1 else ""
+            text = f"提醒：{where + '，' if where else ''}{alert['condition']}。{alert.get('evidence') or ''}".strip()
             log.info(text)
             if targets is None or "web" in targets:
                 self.bus.publish(TOPIC_UI, {"type": "alert", "text": text, **alert})
@@ -452,11 +610,16 @@ class App:
     # ---------------------------------------------------------------- 状态
     def status(self) -> dict[str, Any]:
         return {
-            "video": {"source": self.video.describe(), "running": self.video.running, **self.buffer.stats()},
+            "video": ({"source": self.video.describe(), "running": self.video.running, **self.buffer.stats()}
+                      if self.video is not None and self.buffer is not None else {"source": "", "running": False}),
+            "cameras": [{"id": c.id, "label": self.cameras.label(c.id), **self.cameras.status(c.id)}
+                        for c in self.cameras.list()],
+            "focus_camera": self.focus_camera,
+            "vision": self.vision.stats(),
             "voice": self.voice is not None,
             "speaking": bool(self.voice and self.voice.speaking),
             "busy": self.busy,
-            "observer": self.observer is not None,
+            "observer": bool(self.observers and self.observers.observers),
             "timeline_entries": len(self.timeline),
             "memory": self.memory.stats() if self.memory else None,
             "knowledge": self.knowledge.stats() if self.knowledge else None,

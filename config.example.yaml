@@ -1,7 +1,23 @@
 # 复制为 config.yaml 后修改。未写的项使用默认值（见 vva/core/config.py）。
 # 支持 ${环境变量} 和 ${环境变量:-默认值}。
 
-# ---------------------------------------------------------------- 视频接入
+# ---------------------------------------------------------------- 多路摄像头（多个岗位、多个角度）
+# 首次启动时按这里建岗位下的摄像头，之后在网页“设置 → 岗位与摄像头”里增删改（保存在 data/ops.db）。
+# 不写 cameras 时，下面 video 段的单路配置自动成为第一路（cam0），旧部署不用改。
+# cameras:
+#   - {id: cam0, name: 大门,   area: "仓库大门和装卸区", source: {type: stream, url: "rtsp://admin:密码@192.168.1.64:554/Streaming/Channels/102"}}
+#   - {id: cam1, name: 装卸区, area: "装卸平台和叉车通道", source: {type: stream, url: "rtsp://admin:密码@192.168.1.65:554/Streaming/Channels/102"}}
+#   - {id: cam2, name: 浏览器, source: {type: push}}          # 网页“开启摄像头”或外部程序推送到 /api/ingest/frame?cam=cam2
+camera_settings:
+  max: 4                     # 最多接几路（显存够、视觉模型忙得过来时可以调大）
+  offline_after_s: 15        # 多少秒没有画面算离线
+  offline_alert_s: 120       # 网络摄像头离线多久发“摄像头离线”告警，0 为不发
+
+# 视觉大模型调用统一排队：用户提问 > 告警复核 > 职责检查 > 画面时间线
+vision:
+  max_concurrency: 6         # 同时调用视觉模型的上限（vLLM 的 --max-num-seqs 是 16，留出余量给对话）
+
+# ---------------------------------------------------------------- 视频接入（单路的旧写法，也是 cameras 的默认值）
 video:
   # local  电脑摄像头（本地测试）
   # stream RTSP / HTTP / 视频文件

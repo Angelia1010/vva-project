@@ -548,3 +548,36 @@ sudo systemctl restart vva-app
 | 一直没有告警 / 没推到钉钉 | 先跑自检：`python scripts/check_duties.py -c config.yaml`，会列出卡在哪一环（职责没选钉钉群、试运行、不在生效时间、复核不成立等） |
 | 误报多 | 打开“放大复核”、加“持续 N 秒以上才算”；在告警中心把误报标出来（截图会作为“不算”的例子）；在“看什么”里写清可见特征 |
 | 回答变慢 | 职责太多时后台观察的提示词变长；暂停不用的职责，或把巡检类改到不忙的时间 |
+
+
+## 15. 多岗位、多摄像头（feat/multi-camera 分支）
+
+单摄像头的稳定版在 `feat/duties` 分支，两个分支的区别见 `docs/BRANCHES.md`。
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+git fetch origin && git checkout feat/multi-camera && git pull
+source .venv/bin/activate && python -m pytest -q tests && deactivate
+sudo systemctl restart vva-app
+```
+
+不用改模型服务和 config.yaml。首次启动时原来的摄像头自动变成第一路（`cam0`），职责、告警原样保留。
+
+添加摄像头：
+
+1. 打开 `https://<服务器IP>:9000/settings` →“岗位与摄像头”。需要分现场时先“添加岗位”（如“2 号车间”）。
+2. “添加摄像头”：填名称（如“装卸区”）、所属岗位、接入方式。
+   - 网络摄像头填 RTSP 地址，海康子码流一般是 `rtsp://admin:密码@IP:554/Streaming/Channels/102`，大华是
+     `rtsp://admin:密码@IP:554/cam/realmonitor?channel=1&subtype=1`。点“测试连接”能看到画面再保存。
+   - 用浏览器摄像头时选“推送”，保存后到值守台选中这一路点“开启摄像头”。
+3. 写清“看哪里”，它会告诉模型画面里是什么地方。
+4. 职责默认对所有摄像头生效；只想盯某几路时，编辑职责选“摄像头”。
+
+建议用**子码流**（720p 左右）：主码流 4K 解码很吃 CPU，模型也用不到那么高的分辨率。
+
+| 现象 | 处理 |
+|---|---|
+| 摄像头显示“连接中”一直不变 | 服务器上执行 `ffprobe "rtsp://..."` 看能否拉流；检查防火墙、用户名密码、是否开启了 RTSP |
+| 显示“离线 N 分钟”，收到“摄像头离线”告警 | 网络或电源问题；恢复后告警的处理经过里会记“已恢复画面” |
+| 路数多了以后回答变慢 | `/api/status` 里看 `vision` 的排队时间；把不需要的摄像头停用，或调大 `observer.interval`、`observer.rule_check_interval` 让每路少看几次；必要时调大 `vision.max_concurrency`（不要超过 vLLM 的 `--max-num-seqs`） |
+| 想退回单摄像头版本 | `git checkout feat/duties && sudo systemctl restart vva-app`，数据库兼容，多出来的摄像头不会被使用 |

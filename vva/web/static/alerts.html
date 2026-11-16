@@ -103,6 +103,8 @@
     </div>
     <label for="f-duty" class="sr-only">职责</label>
     <select id="f-duty"><option value="">全部职责</option></select>
+    <label for="f-cam" class="sr-only">摄像头</label>
+    <select id="f-cam" hidden><option value="">全部摄像头</option></select>
     <label for="f-days" class="sr-only">时间</label>
     <select id="f-days"><option value="1">今天</option><option value="7" selected>最近 7 天</option><option value="30">最近 30 天</option><option value="0">全部时间</option></select>
   </div>
@@ -117,14 +119,14 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-let status = params.get("status") || "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false, listed = [];
+let multiCam = false, status = params.get("status") || "", current = Number(params.get("id")) || 0, msgTimer = null, loadedDuties = false, listed = [];
 function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 5000); }
 const lvl = (l) => l === "urgent" ? '<span class="tag urgent">紧急</span>' : l === "important" ? '<span class="tag important">重要</span>' : "";
 const boxStyle = (b) => b ? `left:${b[0] * 100}%;top:${b[1] * 100}%;width:${(b[2] - b[0]) * 100}%;height:${(b[3] - b[1]) * 100}%` : "";
 function fmtResp(s) { if (s == null) return "—"; return s < 60 ? s + "″" : Math.floor(s / 60) + "′" + String(s % 60).padStart(2, "0") + "″"; }
 
 async function load() {
-  const q = new URLSearchParams({ status, duty: $("f-duty").value, days: $("f-days").value });
+  const q = new URLSearchParams({ status, duty: $("f-duty").value, days: $("f-days").value, camera: $("f-cam").value });
   let r;
   try { r = await vva.api("GET", "/api/alerts?" + q); } catch (e) { msg(e.message, "err"); return; }
   const s = r.stats;
@@ -135,7 +137,15 @@ async function load() {
     loadedDuties = true;
     const sel = $("f-duty");
     for (const d of r.duties) { const o = document.createElement("option"); o.value = d.id; o.textContent = d.name; sel.appendChild(o); }
-    if (params.get("duty")) { sel.value = params.get("duty"); return load(); }
+    multiCam = (r.cameras || []).length > 1;
+    if (multiCam) {
+      $("f-cam").hidden = false;
+      for (const c of r.cameras) { const o = document.createElement("option"); o.value = c.id; o.textContent = c.label; $("f-cam").appendChild(o); }
+    }
+    let again = false;
+    if (params.get("duty")) { sel.value = params.get("duty"); again = true; }
+    if (params.get("camera") && multiCam) { $("f-cam").value = params.get("camera"); again = true; }
+    if (again) return load();
   }
   const rows = $("rows"); rows.innerHTML = "";
   listed = r.alerts.map(a => a.id);
@@ -151,7 +161,7 @@ async function load() {
     const img = a.images.length ? vva.img(a.images[a.images.length - 1].file) : "";
     const day = new Date(a.ts * 1000).toDateString() !== new Date().toDateString() ? new Date(a.ts * 1000).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) + " " : "";
     b.innerHTML = `<div class="shot">${img ? `<img src="${img}" alt="" loading="lazy">` : ""}</div>
-      <div><div class="l1"><span class="nm">${vva.esc(a.duty_name)}</span>${lvl(a.level)}<span class="time">${day}${a.time.slice(0, 5)}</span></div>
+      <div><div class="l1"><span class="nm">${vva.esc(a.duty_name)}</span>${lvl(a.level)}${multiCam && a.camera_name ? `<span class="tag">${vva.esc(a.camera_name)}</span>` : ""}<span class="time">${day}${a.time.slice(0, 5)}</span></div>
         <div class="l2"><span class="ev">${vva.esc(a.evidence)}</span><span class="status ${a.status}">${a.status_label}</span></div></div>`;
     b.onclick = () => { current = a.id; rows.querySelectorAll(".row").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "true"); showDetail(a.id); };
     rows.appendChild(b);
@@ -168,7 +178,7 @@ async function showDetail(id) {
   const shots = a.images.map((im, i) => `<figure><div class="shot"><img src="${vva.img(im.file)}" alt="${vva.esc(im.caption)}">
       ${i === a.images.length - 1 && a.box ? `<div class="box" style="${boxStyle(a.box)}"></div>` : ""}</div><figcaption>${vva.esc(im.caption)}</figcaption></figure>`).join("");
   $("detail").innerHTML = `
-    <div class="d-head"><h2>${vva.esc(a.duty_name)}</h2>${lvl(a.level)}<span class="status ${a.status}">${a.status_label}</span>
+    <div class="d-head"><h2>${vva.esc(a.duty_name)}</h2>${lvl(a.level)}<span class="status ${a.status}">${a.status_label}</span>${a.where ? `<span class="sub">${vva.esc(a.where)}</span>` : ""}
       <span class="spacer"></span><span class="time">${when}</span><button type="button" class="link danger" id="btn-del">删除</button></div>
     <div class="d-body">
       <div class="sec"><span class="label">判断依据</span>
@@ -208,7 +218,7 @@ $("f-status").querySelectorAll("button").forEach(b => b.onclick = () => {
   $("f-status").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
   load();
 });
-$("f-duty").onchange = $("f-days").onchange = () => { current = 0; load(); };
+$("f-duty").onchange = $("f-days").onchange = $("f-cam").onchange = () => { current = 0; load(); };
 if (params.get("days") !== null && [...$("f-days").options].some(o => o.value === params.get("days"))) $("f-days").value = params.get("days");
 // 从值守台“告警中心”跳过来时带着 status=pending：选中“待处理”
 $("f-status").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.v === status || (!status && !x.dataset.v))));

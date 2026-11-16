@@ -54,6 +54,27 @@
       linear-gradient(#45C8F5, #45C8F5) top right / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) top right / 2px 18px no-repeat,
       linear-gradient(#45C8F5, #45C8F5) bottom left / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) bottom left / 2px 18px no-repeat,
       linear-gradient(#45C8F5, #45C8F5) bottom right / 18px 2px no-repeat, linear-gradient(#45C8F5, #45C8F5) bottom right / 2px 18px no-repeat; }
+  .camtabs { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; min-width: 0; }
+  .camtabs[hidden] { display: none; }
+  .camtabs .tabs { display: flex; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .camtab { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; border-radius: 15px; flex: 0 0 auto;
+            border: 1px solid var(--line); background: var(--bar); color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+  .camtab:hover { color: var(--ink); }
+  .camtab[aria-selected="true"] { background: var(--steel-soft); border-color: var(--cyan); color: #E7F7FE; font-weight: 500; }
+  .camtab .n { font: 600 12px var(--digits); color: var(--alert-soft); }
+  .camtab .dot.offline, .tile .dot.offline { background: var(--lamp-busy); box-shadow: none; }
+  .camtabs .spacer { flex: 1; }
+  .grid4 { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 4px; background: #070D17; }
+  .grid4[hidden] { display: none; }
+  .grid4 .tile { position: relative; background: #0C1522; cursor: pointer; overflow: hidden; border: 1px solid transparent; border-radius: 4px; padding: 0; min-height: 0; }
+  .grid4 .tile:hover, .grid4 .tile:focus-visible { border-color: var(--cyan); }
+  .grid4 .tile.hot { border-color: rgba(255,107,94,.7); }
+  .grid4 .tile img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .grid4 .tile .lbl { position: absolute; left: 8px; top: 6px; padding: 2px 8px; border-radius: 4px; background: rgba(8,14,24,.78);
+                      font-size: 12px; color: #DCE6F1; display: inline-flex; align-items: center; gap: 6px; }
+  .grid4 .tile .off { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-2); font-size: 13px; }
+  .viewport.grid-on::after, .viewport.grid-on .hud { display: none; }
+  .viewport [hidden] { display: none !important; }
   .hud { position: absolute; padding: 3px 8px; border-radius: 4px; background: rgba(8,14,24,.72); font-size: 12px; color: #C8D4E2; display: inline-flex; align-items: center; gap: 6px; }
   .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
   .controls .spacer { flex: 1; }
@@ -188,7 +209,7 @@
   <span class="spacer"></span>
   <div id="notice" role="status"></div>
   <span class="area" id="st-owner"></span>
-  <a href="/settings" style="font-size:13px">岗位设置</a>
+  <a href="/settings" style="font-size:13px">岗位与摄像头</a>
 </div>
 
 <main class="desk">
@@ -213,8 +234,15 @@
   <!-- 中：画面 -->
   <section class="col-view" aria-label="实时画面">
     <div class="panel video-panel" style="padding:10px">
-      <div class="viewport">
+      <div class="camtabs" id="camtabs" hidden>
+        <div class="tabs" id="cam-tabs" role="tablist" aria-label="摄像头"></div>
+        <span class="spacer"></span>
+        <button type="button" class="link" id="btn-grid" aria-pressed="false">四宫格</button>
+      </div>
+      <div class="viewport" id="viewport">
         <video id="video" autoplay playsinline muted></video>
+        <img id="server-video" alt="实时画面" hidden>
+        <div id="grid" class="grid4" hidden></div>
         <canvas id="overlay"></canvas>
         <div id="placeholder" class="placeholder">点击下方“开启摄像头”</div>
         <span class="hud" style="left:14px;top:12px"><span class="dot error" aria-hidden="true"></span>LIVE · <span id="hud-name"></span></span>
@@ -297,7 +325,9 @@ function addTimeline(e) {
   const d = document.createElement("div"); d.className = "tl-item";
   const t = document.createElement("span"); t.className = "t"; t.textContent = e.time;
   const s = document.createElement("span"); s.textContent = e.summary + (e.people_count != null ? `（${e.people_count}人）` : "");
-  d.append(t, s);
+  d.append(t);
+  if (e.camera_name && cams.length > 1) { const c = document.createElement("span"); c.className = "tag"; c.textContent = e.camera_name; c.style.marginRight = "6px"; d.append(c); }
+  d.append(s);
   if (e.anomalies && e.anomalies.length) { const a = document.createElement("div"); a.className = "anom"; a.textContent = "异常：" + e.anomalies.join("、"); d.appendChild(a); }
   tl.prepend(d); while (tl.children.length > 200) tl.removeChild(tl.lastChild);
 }
@@ -312,8 +342,9 @@ function drawBoxes() {
   const W = overlay.clientWidth, H = overlay.clientHeight;
   overlay.width = W; overlay.height = H;
   const ctx = overlay.getContext("2d"); ctx.clearRect(0, 0, W, H);
-  const srv = $("server-video");
+  const srv = $("server-video").hidden ? null : $("server-video");
   const vw = srv ? srv.naturalWidth : video.videoWidth, vh = srv ? srv.naturalHeight : video.videoHeight;
+  if (gridOn) { ctx.clearRect(0, 0, W, H); return; }
   if (!vw || !boxes.length) return;
   const s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
   ctx.font = "600 13px 'Noto Sans SC', sans-serif";
@@ -335,17 +366,13 @@ function showBoxes(list) {
 window.addEventListener("resize", drawBoxes);
 
 // ============================================================ 岗位、职责、告警
-let overviewTimer = null;
+let overviewTimer = null, overview = null;
 function refreshSoon() { clearTimeout(overviewTimer); overviewTimer = setTimeout(loadOverview, 300); }
 async function loadOverview() {
   let o;
   try { o = await vva.api("GET", "/api/overview"); } catch (e) { return; }
-  const st = o.station;
-  $("st-name").textContent = st.name; $("hud-name").textContent = st.name;
-  $("st-area").textContent = st.area ? "看哪里：" + st.area : "";
-  $("st-owner").textContent = st.owner ? "岗位负责人 " + st.owner : "";
-  $("st-badge").className = "badge" + (st.paused ? " off" : "");
-  $("st-state").textContent = st.paused ? "已暂停值守" : "值守中";
+  overview = o;
+  renderCams(o);
   $("st-today").textContent = o.stats.today; $("st-pending").textContent = o.stats.pending;
   $("st-pending").className = o.stats.pending ? "hot" : "";
   renderDuties(o.duties);
@@ -377,8 +404,8 @@ function renderDuties(list) {
 async function testDuty(d, btn) {
   btn.disabled = true; btn.textContent = "检查中…";
   try {
-    const r = await vva.api("POST", "/api/duties/test", { id: d.id });
-    addMsg("sys", `试一下「${d.name}」：${r.match ? (d.kind === "inspect" ? "异常" : "命中") : (d.kind === "inspect" ? "正常" : "当前未命中")}。${r.evidence || ""}`);
+    const r = await vva.api("POST", "/api/duties/test", { id: d.id, camera: camFocus });
+    addMsg("sys", `试一下「${d.name}」${r.camera_label && cams.length > 1 ? "（" + r.camera_label + "）" : ""}：${r.match ? (d.kind === "inspect" ? "异常" : "命中") : (d.kind === "inspect" ? "正常" : "当前未命中")}。${r.evidence || ""}`);
     if (r.box) showBoxes([{ box: r.box, label: d.name, alert: r.match }]);
   } catch (e) { notice("检查失败：" + e.message); }
   btn.disabled = false; btn.textContent = "试一下";
@@ -395,7 +422,7 @@ function renderAlerts(list) {
     el.innerHTML = `<div class="acard"><div class="shot">${img ? `<img src="${img}" alt="告警画面">` : ""}</div>
       <div class="body"><div class="title"><span class="n">${vva.esc(a.duty_name)}</span> ${a.level === "urgent" ? '<span class="tag urgent">紧急</span>' : a.level === "important" ? '<span class="tag important">重要</span>' : ""}
         <span class="status ${a.status}">${a.status_label}</span></div>
-        <span class="when">${a.time} · ${vva.ago(a.ts)}</span><span class="ev">${vva.esc(a.evidence)}</span></div></div>
+        <span class="when">${a.where && cams.length > 1 ? vva.esc(a.where) + " · " : ""}${a.time} · ${vva.ago(a.ts)}</span><span class="ev">${vva.esc(a.evidence)}</span></div></div>
       <div class="sent">${a.rule_ref ? "依据 " + vva.esc(a.rule_ref) : ""}</div>
       <div class="btns"><button type="button" class="primary" data-a="resolve">已处理</button><button type="button" data-a="false">误报</button>
         <button type="button" class="ghost" data-a="ask">追问</button></div>`;
@@ -424,10 +451,11 @@ function handle(ev) {
     case "alert": addMsg("sys", ev.text); break;
     case "action": addMsg("sys", `${ev.ok ? "已执行" : "执行失败"} ${String(ev.code).padStart(2, "0")} 号 ${ev.name}：${ev.detail}`); break;
     case "alert_new":
-      if (ev.alert && ev.alert.box && ev.alert.status !== "record") showBoxes([{ box: ev.alert.box, label: ev.alert.duty_name, alert: true }]);
+      if (ev.alert && ev.alert.box && ev.alert.status !== "record" && (!ev.alert.camera || ev.alert.camera === camFocus))
+        showBoxes([{ box: ev.alert.box, label: ev.alert.duty_name, alert: true }]);
       refreshSoon(); break;
-    case "alert_update": case "duties_changed": case "rules": refreshSoon(); break;
-    case "bbox": showBoxes(ev.boxes); break;
+    case "alert_update": case "duties_changed": case "rules": case "cameras_changed": case "camera_status": refreshSoon(); break;
+    case "bbox": if (!ev.camera || ev.camera === camFocus) showBoxes(ev.boxes); break;
     case "vad": if (ev.state === "start") setVoice("正在听", "", true); else setVoice("识别中…", undefined, true); break;
     case "tts": if (ev.state === "speaking") setVoice("播报中", undefined, true); else setVoice("空闲", "", false); break;
     case "asr": if (ev.ignored) { addMsg("sys", `（${ev.reason || "已忽略"}）${ev.text}`); setVoice("空闲", "", false); } break;
@@ -436,7 +464,7 @@ function handle(ev) {
 }
 function connectChat() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-  ws.onopen = () => pill("pill-conn", "已连接", "on");
+  ws.onopen = () => { pill("pill-conn", "已连接", "on"); if (camFocus) ws.send(JSON.stringify({ type: "focus", camera: camFocus })); };
   ws.onclose = () => { pill("pill-conn", "已断开，重连中", "hot"); setTimeout(connectChat, 2000); };
   ws.onmessage = (m) => handle(JSON.parse(m.data));
 }
@@ -444,13 +472,108 @@ $("form").onsubmit = (e) => {
   e.preventDefault(); const t = $("input").value.trim();
   if (!t || !ws || ws.readyState !== 1) return;
   ensurePlayer();
-  ws.send(JSON.stringify({type: "chat", text: t})); $("input").value = "";
+  ws.send(JSON.stringify({type: "chat", text: t, camera: camFocus})); $("input").value = "";
 };
 $("btn-stop").onclick = () => { ws && ws.send(JSON.stringify({type: "interrupt"})); stopPlayback(); };
 $("btn-reset").onclick = () => { ws && ws.send(JSON.stringify({type: "reset"})); chat.innerHTML = ""; stopPlayback(); };
 
-// ============================================================ 摄像头：本地预览 + 定时上传 JPEG
-let camStream = null, frameTimer = null, uploading = false;
+// ============================================================ 多路摄像头：切换、四宫格
+let cams = [], stations = [], camFocus = "", gridOn = false;
+const camById = (id) => cams.find(c => c.id === id);
+const stationOf = (c) => stations.find(s => s.id === (c && c.station_id)) || (overview && overview.station) || {};
+const camState = (c) => (c.status && c.status.state) || "";
+function renderCams(o) {
+  cams = o.cameras || []; stations = o.stations || [];
+  if (!camById(camFocus)) {
+    let saved = ""; try { saved = localStorage.getItem("vva-focus") || ""; } catch (e) {}
+    setFocus(camById(saved) ? saved : (camById(o.focus) ? o.focus : (cams[0] || {}).id || ""), true);
+  }
+  $("camtabs").hidden = cams.length <= 1;
+  if (cams.length <= 1) gridOn = false;
+  const tabs = $("cam-tabs"); tabs.innerHTML = "";
+  for (const c of cams) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "camtab"; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(c.id === camFocus && !gridOn));
+    const st = camState(c), dot = st === "online" ? "running" : (st === "offline" || st === "error" ? "offline" : "");
+    b.title = `${c.label}：${(c.status && c.status.text) || ""}`;
+    b.innerHTML = `<span class="dot ${dot}" aria-hidden="true"></span>${vva.esc(c.label)}${c.open ? `<span class="n" title="待处理告警">${c.open}</span>` : ""}`;
+    b.onclick = () => { gridOn = false; setFocus(c.id); };
+    tabs.appendChild(b);
+  }
+  $("btn-grid").setAttribute("aria-pressed", String(gridOn)); $("btn-grid").textContent = gridOn ? "单画面" : "四宫格";
+  renderStation(); updateView();
+}
+function renderStation() {
+  const c = camById(camFocus), st = stationOf(c);
+  $("st-name").textContent = st.name || "";
+  $("hud-name").textContent = c && cams.length > 1 ? c.label : (st.name || "");
+  const area = (c && c.area) || st.area;
+  $("st-area").textContent = (c && cams.length > 1 ? c.name + " · " : "") + (area ? "看哪里：" + area : "");
+  $("st-owner").textContent = st.owner ? "岗位负责人 " + st.owner : "";
+  $("st-badge").className = "badge" + (st.paused ? " off" : "");
+  $("st-state").textContent = st.paused ? "已暂停值守" : "值守中";
+}
+function setFocus(id, quiet) {
+  if (!id) return;
+  const changed = id !== camFocus;
+  camFocus = id; window.vvaFocusCamera = id;
+  try { localStorage.setItem("vva-focus", id); } catch (e) {}
+  if (changed) { boxes = []; drawBoxes(); }
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "focus", camera: id }));
+  if (!quiet) renderCams(overview || { cameras: cams, stations });
+}
+function serverImg(img, cam, fps, side) {
+  const src = `/video.mjpg?cam=${encodeURIComponent(cam)}` + (fps ? `&fps=${fps}&side=${side}` : "");
+  if (img.dataset.src === src) return;
+  img.dataset.src = src; img.src = src;
+  img.onerror = () => setTimeout(() => { if (img.dataset.src === src) img.src = src + "&t=" + Date.now(); }, 3000);
+}
+function updateView() {
+  const c = camById(camFocus), img = $("server-video"), grid = $("grid");
+  $("viewport").classList.toggle("grid-on", gridOn);
+  if (gridOn) {
+    grid.hidden = false; img.hidden = true; video.hidden = true; img.removeAttribute("src"); img.dataset.src = "";
+    $("placeholder").style.display = "none";
+    const key = cams.map(x => x.id + camState(x) + x.open).join("|");
+    if (grid.dataset.key !== key) {
+      grid.dataset.key = key; grid.innerHTML = "";
+      for (const x of cams.slice(0, 4)) {
+        const t = document.createElement("button"); t.type = "button"; t.className = "tile" + (x.open ? " hot" : "");
+        t.setAttribute("aria-label", "切换到 " + x.label);
+        const on = camState(x) === "online";
+        t.innerHTML = `${on ? `<img alt="">` : `<span class="off">${vva.esc((x.status && x.status.text) || "无画面")}</span>`}
+          <span class="lbl"><span class="dot ${on ? "running" : "offline"}" aria-hidden="true"></span>${vva.esc(x.label)}${x.open ? ` · 待处理 ${x.open}` : ""}</span>`;
+        if (on) serverImg(t.querySelector("img"), x.id, 2, 640);
+        t.onclick = () => { gridOn = false; setFocus(x.id); };
+        grid.appendChild(t);
+      }
+    }
+    showPushControls(false); return;
+  }
+  grid.hidden = true; grid.innerHTML = ""; grid.dataset.key = "";
+  if (!c) { img.hidden = true; video.hidden = true; $("placeholder").style.display = "flex"; $("placeholder").textContent = "还没有摄像头，请在“岗位与摄像头”里添加"; return; }
+  const pushing = camStream && pushTarget === c.id;
+  if (pushing) {
+    video.hidden = false; img.hidden = true; $("placeholder").style.display = "none";
+  } else if (c.push && camState(c) !== "online") {
+    video.hidden = true; img.hidden = true; $("placeholder").style.display = "flex";
+    $("placeholder").textContent = navigator.mediaDevices ? `「${c.label}」等待画面：点下方“开启摄像头”，用这台电脑的摄像头推送` : `「${c.label}」等待外部程序推送画面`;
+  } else {
+    video.hidden = true; img.hidden = false; $("placeholder").style.display = "none";
+    serverImg(img, c.id);
+  }
+  showPushControls(!!(c.push || camStream));
+}
+function showPushControls(on) {
+  const ok = on && !!navigator.mediaDevices;
+  for (const id of ["btn-cam", "sel-cam", "sel-fps"]) $(id).style.display = ok ? "" : "none";
+  if (!camStream) pill("pill-cam", ok ? "摄像头关闭" : "服务端摄像头", ok ? "" : "on");
+}
+$("btn-grid").onclick = () => { gridOn = !gridOn; renderCams(overview || { cameras: cams, stations }); };
+$("server-video").addEventListener("load", drawBoxes);
+
+// ============================================================ 浏览器摄像头：本地预览 + 定时上传 JPEG（推到选中的那一路）
+let camStream = null, frameTimer = null, uploading = false, pushTarget = "";
 const grab = document.createElement("canvas");
 
 async function listCameras() {
@@ -461,21 +584,26 @@ async function listCameras() {
 }
 async function startCamera() {
   stopCamera();
+  const c = camById(camFocus);
+  pushTarget = c && c.push ? c.id : ((caps.push_cameras || [])[0] || "");
+  if (!pushTarget) throw new Error("没有“推送”方式的摄像头，请在设置里把一路摄像头的接入方式改成推送");
   const id = $("sel-cam").value;
   camStream = await navigator.mediaDevices.getUserMedia({
     video: { width: {ideal: 1280}, height: {ideal: 720}, ...(id ? {deviceId: {exact: id}} : {}) }, audio: false });
-  video.srcObject = camStream; $("placeholder").style.display = "none";
+  video.srcObject = camStream;
   await listCameras();
   $("btn-cam").textContent = "关闭摄像头"; $("btn-cam").className = "active";
-  pill("pill-cam", "摄像头上传中", "on");
+  pill("pill-cam", cams.length > 1 ? `推送到「${(camById(pushTarget) || {}).label || pushTarget}」` : "摄像头上传中", "on");
+  if (pushTarget !== camFocus) setFocus(pushTarget); else updateView();
   restartUpload();
 }
 function stopCamera() {
   clearInterval(frameTimer); frameTimer = null;
   if (camStream) camStream.getTracks().forEach(t => t.stop());
-  camStream = null; video.srcObject = null; $("placeholder").style.display = "flex";
+  camStream = null; video.srcObject = null; pushTarget = "";
   $("btn-cam").textContent = "开启摄像头"; $("btn-cam").className = "primary";
   pill("pill-cam", "摄像头关闭");
+  if (cams.length) updateView();
 }
 function restartUpload() {
   clearInterval(frameTimer);
@@ -489,7 +617,7 @@ async function uploadFrame() {
     grab.width = video.videoWidth; grab.height = video.videoHeight;
     grab.getContext("2d").drawImage(video, 0, 0);
     const blob = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.85));
-    const res = await fetch("/api/ingest/frame", { method: "POST", body: blob,
+    const res = await fetch("/api/ingest/frame?cam=" + encodeURIComponent(pushTarget), { method: "POST", body: blob,
       headers: { "Content-Type": "image/jpeg", "X-Timestamp": String(Date.now() / 1000), "X-Token": TOKEN } });
     if (!res.ok) pill("pill-cam", "上传失败 " + res.status, "hot");
   } catch (e) { pill("pill-cam", "上传失败", "hot"); }
@@ -690,17 +818,6 @@ function showTips() { notice(baseTips.concat(soundTip ? [soundTip] : []).join("�
   }
   try {
     caps = await (await fetch("/api/capabilities")).json();
-    if (!caps.video_push) {
-      const img = document.createElement("img");
-      img.id = "server-video"; img.src = "/video.mjpg"; img.alt = "实时画面";
-      img.style.cssText = "display:block;width:100%;height:100%;object-fit:contain";
-      img.onload = drawBoxes;
-      img.onerror = () => setTimeout(() => { img.src = "/video.mjpg?t=" + Date.now(); }, 2000);
-      video.replaceWith(img);
-      $("placeholder").style.display = "none";
-      for (const id of ["btn-cam", "sel-cam", "sel-fps"]) $(id).style.display = "none";
-      pill("pill-cam", "服务端摄像头", "on");
-    }
     if (!caps.audio_in_push) {
       $("btn-mic").disabled = true;
       tips.push(caps.voice ? "语音由服务器本机麦克风采集，网页麦克风不可用"

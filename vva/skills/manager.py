@@ -24,7 +24,8 @@ LOADED_KEY = "loaded_skill"      # load_skill 的结果里带这个字段，用�
 
 
 class SkillManager:
-    def __init__(self, cfg: dict[str, Any], camera_id: str = "cam0") -> None:
+    def __init__(self, cfg: dict[str, Any], camera_id: str | None = "cam0") -> None:
+        """camera_id：只用适用于这一路的技能；None 表示多路，全部技能都可用（后台观察按各自的摄像头再筛）。"""
         root = cfg.get("dir") or "skills"
         self.store = SkillStore(root)
         legacy = cfg.get("legacy_scene_dir") or ""
@@ -39,8 +40,9 @@ class SkillManager:
         self._tool_owner: dict[str, str] = {}      # 工具名 → 所属技能
 
     # ---------------------------------------------------------------- 状态
-    def active(self) -> list[Skill]:
-        return [s for s in self.store.skills.values() if s.enabled and s.applies_to(self.camera_id)]
+    def active(self, camera: str | None = None) -> list[Skill]:
+        cam = camera or self.camera_id
+        return [s for s in self.store.skills.values() if s.enabled and (cam is None or s.applies_to(cam))]
 
     def get_active(self, name: str) -> Skill | None:
         name = (name or "").strip()
@@ -131,9 +133,9 @@ class SkillManager:
             catalog = prompts.SKILLS_CATALOG.format(items="\n".join(items))
         return prompts.SKILLS_BLOCK.format(always=always, catalog=catalog)
 
-    def observer_hint(self) -> str:
-        """后台观察用：常驻技能的正文（截断）。"""
-        return "\n".join(s.body[:self.always_max_chars] for s in self.active() if s.always and s.body)
+    def observer_hint(self, camera: str | None = None) -> str:
+        """后台观察用：常驻技能的正文（截断）。camera：只要适用于这一路的。"""
+        return "\n".join(s.body[:self.always_max_chars] for s in self.active(camera) if s.always and s.body)
 
     def asr_prompt(self) -> str:
         words: list[str] = []

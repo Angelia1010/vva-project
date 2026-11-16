@@ -61,11 +61,14 @@ class AlertStore:
         return self._row(rows[0]) if rows else None
 
     def query(self, start: float = 0, end: float | None = None, duty_id: str = "", statuses: tuple[str, ...] = (),
-              limit: int = 200) -> list[Alert]:
+              limit: int = 200, camera: str = "") -> list[Alert]:
         sql, args = "SELECT id, data FROM alerts WHERE ts >= ? AND ts < ?", [start, end or time.time() + 1]
         if duty_id:
             sql += " AND duty_id = ?"
             args.append(duty_id)
+        if camera:
+            sql += " AND json_extract(data, '$.camera') = ?"
+            args.append(camera)
         if statuses:
             sql += f" AND status IN ({','.join('?' * len(statuses))})"
             args += list(statuses)

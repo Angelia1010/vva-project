@@ -57,8 +57,7 @@ def main() -> None:
     if args.browser:
         # 浏览器模式：凡是原本要在服务器本机打开的设备（local），都改由网页提供。
         # 已配置 RTSP 等视频源（stream/custom）时保留，网页上显示该视频并用浏览器麦克风对话。
-        if cfg["video"]["type"] == "local":
-            cfg["video"]["type"] = "push"
+        cfg["browser_mode"] = True        # 本机 USB 摄像头改由网页推送（只在运行时转换，不改保存的配置）
         for side in ("input", "output"):
             if cfg["audio"][side]["type"] == "local":
                 cfg["audio"][side]["type"] = "push"

@@ -44,7 +44,8 @@ class NotifyRouter:
             "kind": "alert", "alert_id": alert.id, "rule_id": duty.id, "duty_id": duty.id, "name": duty.name,
             "condition": duty.name if duty.name else duty.condition, "detail": duty.condition,
             "evidence": alert.evidence + (f"（依据：{duty.rule_ref}）" if duty.rule_ref else ""),
-            "level": duty.level, "station": self.station_name(), "ts": alert.ts, "targets": targets,
+            "level": duty.level, "station": getattr(alert, "where", "") or self.station_name(), "ts": alert.ts, "targets": targets,
+            "camera": getattr(alert, "camera", ""), "camera_name": getattr(alert, "camera_name", ""),
             "voice_text": duty.voice_text, "image": alert.images[-1]["file"] if alert.images else "",
         }
         self.bus.publish(TOPIC_ALERT, payload)

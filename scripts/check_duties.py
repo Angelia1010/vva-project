@@ -65,20 +65,28 @@ def main() -> None:
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
 
-    print("== 岗位")
-    row = db.execute("SELECT data FROM station").fetchone()
-    st = json.loads(row["data"]) if row else {}
-    print(f"  {st.get('name', '?')}")
-    if st.get("paused"):
-        bad("岗位处于“暂停值守”状态，所有职责都不判断（设置页取消暂停）", problems)
+    print("== 岗位与摄像头")
+    stations = {r["id"]: json.loads(r["data"]) for r in db.execute("SELECT id, data FROM station")}
+    has_cams = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cameras'").fetchone()
+    cams = [json.loads(r["data"]) for r in db.execute("SELECT data FROM cameras")] if has_cams else []
+    for sid, st in stations.items():
+        mine = [c for c in cams if c.get("station_id", "default") == sid]
+        print(f"  {st.get('name', '?')}" + (f"：{'、'.join(c['name'] + '（' + c['id'] + '）' for c in mine)}" if mine else ""))
+        if st.get("paused"):
+            bad(f"岗位“{st.get('name')}”处于“暂停值守”状态，它的摄像头都不判断职责（设置页取消暂停）", problems)
+    for c in cams:
+        if not c.get("enabled", True):
+            print(f"  [停用] 摄像头 {c['name']}（{c['id']}）")
 
     print("\n== 后台观察")
     if cfg["observer"].get("enabled", True):
         ok(f"已开启，约每 {cfg['observer'].get('rule_check_interval', 8)} 秒判断一次职责")
     else:
         bad("observer.enabled 为 false，后台不看画面，职责不会触发", problems)
-    if cfg["video"].get("type") == "push":
-        print("  [提示] 画面来自浏览器摄像头：值守台页面要一直开着并且“开启摄像头”，关掉页面就没有画面可看")
+    push = [c["name"] for c in cams if (c.get("source") or {}).get("type") in ("push", "local")] if cams else \
+        (["主画面"] if cfg["video"].get("type") == "push" else [])
+    if push:
+        print(f"  [提示] {'、'.join(push)} 的画面可能来自浏览器摄像头：值守台页面要一直开着并且“开启摄像头”，关掉页面就没有画面可看")
 
     print("\n== 通知渠道")
     chans = {}

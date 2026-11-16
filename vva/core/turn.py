@@ -19,22 +19,33 @@ class Attachment:
 _session: ContextVar[str | None] = ContextVar("vva_session", default=None)
 _attachments: ContextVar[list[Attachment] | None] = ContextVar("vva_attachments", default=None)
 _turn: ContextVar[int] = ContextVar("vva_turn", default=0)
+_camera: ContextVar[str | None] = ContextVar("vva_camera", default=None)
 _seq = 0
 
 
-def begin(session_id: str) -> list[Attachment]:
-    """在一轮对话的任务开始时调用，返回本轮的附件列表。"""
+def begin(session_id: str, camera: str | None = None) -> list[Attachment]:
+    """在一轮对话的任务开始时调用，返回本轮的附件列表。camera：用户此刻在值守台看的那一路（没有则为 None）。"""
     global _seq
     _seq += 1
     items: list[Attachment] = []
     _turn.set(_seq)
     _session.set(session_id)
+    _camera.set(camera or None)
     _attachments.set(items)
     return items
 
 
 def current_session() -> str | None:
     return _session.get()
+
+
+def current_camera() -> str | None:
+    """本轮对话默认看的摄像头（值守台上选中的那一路）；钉钉等入口为 None。"""
+    return _camera.get()
+
+
+def set_camera(camera: str | None) -> None:
+    _camera.set(camera or None)
 
 
 def current_turn() -> int:

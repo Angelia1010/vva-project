@@ -18,6 +18,11 @@ DEFAULTS: dict[str, Any] = {
         "custom": {"class": "", "params": {}},
         "buffer": {"seconds": 60, "fps": 2.0, "jpeg_quality": 85, "max_side": 1920},
     },
+    # 多路摄像头（多个岗位、多个角度）。首次启动时按这里建摄像头，之后在网页“设置 → 摄像头”维护。
+    # 留空时把上面 video 段的单路配置变成第一路。
+    "cameras": [],
+    "camera_settings": {"max": 4, "offline_after_s": 15, "offline_alert_s": 120},
+    "vision": {"max_concurrency": 6},
     "audio": {
         "enabled": True,
         "input": {"type": "local", "sample_rate": 16000, "device": None,

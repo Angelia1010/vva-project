@@ -68,9 +68,10 @@ def create_web_app(app: App) -> FastAPI:
     @api.get("/api/capabilities")
     async def capabilities() -> JSONResponse:
         from vva.audio.push import CallbackAudioOutput, PushAudioInput
-        from vva.video.push_source import PushVideoSource
+        push_cams = [c.id for c in app.cameras.enabled() if app.cameras.effective_type(c) == "push"]
         return JSONResponse({
-            "video_push": isinstance(app.video, PushVideoSource),
+            "video_push": bool(push_cams),
+            "push_cameras": push_cams,
             "audio_in_push": isinstance(app.audio_in, PushAudioInput),
             "audio_out_push": isinstance(app.audio_out, CallbackAudioOutput),
             "voice": app.voice is not None,
@@ -78,14 +79,23 @@ def create_web_app(app: App) -> FastAPI:
             "token_required": bool(token),
         })
 
+    def _buf(cam: str | None):
+        buf = app.cameras.buffer(cam or None)
+        if buf is None:
+            raise HTTPException(404, "没有这个摄像头")
+        return buf
+
     @api.get("/video.mjpg")
-    async def video_stream(request: Request) -> StreamingResponse:
-        interval = 1.0 / max(1, int(web_cfg.get("mjpeg_fps", 10)))
+    async def video_stream(request: Request, cam: str = "", fps: float = 0, side: int = 960) -> StreamingResponse:
+        """实时画面（MJPEG）。cam：哪一路；四宫格时可用 fps、side 降低码率。"""
+        interval = 1.0 / max(0.5, float(fps or web_cfg.get("mjpeg_fps", 10)))
+        buf = _buf(cam)
+        side = min(1920, max(320, int(side or 960)))
 
         async def gen():
             last_ts = None
             while not await request.is_disconnected():
-                item = app.buffer.preview_jpeg()
+                item = buf.preview_jpeg(max_side=side)
                 if item and item[0] != last_ts:
                     last_ts, data = item
                     yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
@@ -95,8 +105,8 @@ def create_web_app(app: App) -> FastAPI:
         return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
     @api.get("/api/snapshot.jpg")
-    async def snapshot() -> Response:
-        bf = app.buffer.latest_snapshot()
+    async def snapshot(cam: str = "") -> Response:
+        bf = _buf(cam).latest_snapshot()
         if bf is None:
             raise HTTPException(404, "暂无画面")
         return Response(bf.jpeg, media_type="image/jpeg")
@@ -106,12 +116,12 @@ def create_web_app(app: App) -> FastAPI:
         return JSONResponse(app.status())
 
     @api.get("/api/timeline")
-    async def timeline(minutes: float = 10) -> JSONResponse:
-        return JSONResponse([e.to_dict() for e in app.timeline.query(minutes)])
+    async def timeline(minutes: float = 10, camera: str = "") -> JSONResponse:
+        return JSONResponse([e.to_dict() for e in app.timeline.query(minutes, camera or None)])
 
     @api.post("/api/chat")
     async def chat(body: dict) -> JSONResponse:
-        await app.handle_user_text(str(body.get("text", "")), "api")
+        await app.handle_user_text(str(body.get("text", "")), "api", camera=str(body.get("camera") or "") or None)
         return JSONResponse({"ok": True})
 
     # ------------------------------------------------------------ 前端事件通道
@@ -134,7 +144,9 @@ def create_web_app(app: App) -> FastAPI:
                 msg = await sock.receive_json()
                 t = msg.get("type")
                 if t == "chat":
-                    await app.handle_user_text(str(msg.get("text", "")), "text")
+                    await app.handle_user_text(str(msg.get("text", "")), "text", camera=str(msg.get("camera") or "") or None)
+                elif t == "focus":                  # 值守台切换了画面：之后语音提问默认看这一路
+                    app.set_focus(str(msg.get("camera") or ""))
                 elif t == "interrupt":
                     await app.interrupt()
                 elif t == "ptt" and app.voice:      # 按住说话（voice.mode=push_to_talk）
@@ -155,18 +167,20 @@ def create_web_app(app: App) -> FastAPI:
             app.bus.unsubscribe(TOPIC_UI, q)
 
     # ------------------------------------------------------------ 外部视频接入
-    from vva.video.push_source import PushVideoSource
-    if isinstance(app.video, PushVideoSource):
-        @api.post("/api/ingest/frame")
-        async def ingest_frame(request: Request) -> JSONResponse:
-            _check_token(request.headers.get("X-Token"))
-            data = await request.body()
-            ts_header = request.headers.get("X-Timestamp")
-            ts = float(ts_header) if ts_header else time.time()
-            ok = await asyncio.to_thread(app.video.push_jpeg, data, ts)
-            if not ok:
-                raise HTTPException(400, "JPEG 解码失败")
-            return JSONResponse({"ok": True})
+    @api.post("/api/ingest/frame")
+    async def ingest_frame(request: Request, cam: str = "") -> JSONResponse:
+        """推送一帧 JPEG。cam：推给哪一路（该摄像头的接入方式要是“推送”）；不传则为第一个推送摄像头。"""
+        _check_token(request.headers.get("X-Token"))
+        data = await request.body()
+        ts_header = request.headers.get("X-Timestamp")
+        ts = float(ts_header) if ts_header else time.time()
+        try:
+            ok = await asyncio.to_thread(app.cameras.push_jpeg, cam or None, data, ts)
+        except KeyError as e:
+            raise HTTPException(404, f"摄像头 {cam or '（未指定）'} 不存在或接入方式不是推送") from e
+        if not ok:
+            raise HTTPException(400, "JPEG 解码失败")
+        return JSONResponse({"ok": True})
 
     # ------------------------------------------------------------ 外部音频接入
     from vva.audio.push import CallbackAudioOutput, PushAudioInput
@@ -235,6 +249,10 @@ def create_web_app(app: App) -> FastAPI:
     # ------------------------------------------------------------ 执行（带编号的现场动作）
     from vva.web.actions_api import register_action_routes
     register_action_routes(api, app, web_cfg.get("admin_token") or "", STATIC_DIR)
+
+    # ------------------------------------------------------------ 岗位与摄像头
+    from vva.web.cameras_api import register_camera_routes
+    register_camera_routes(api, app, web_cfg.get("admin_token") or "")
 
     # ------------------------------------------------------------ 飞书等接入入口的配置
     from vva.web.channels_api import register_channel_routes

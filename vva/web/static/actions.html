@@ -92,7 +92,7 @@
   <div class="layout">
     <section class="panel main" aria-label="动作清单">
       <div class="toolbar">
-        <span class="howto">对值守台说 <q>执行 3 号</q> 或 <q>3 号</q>，也可以在钉钉、飞书群里 @机器人 发送</span>
+        <span class="howto">对值守台说 <q>执行 3 号</q> 或 <q>3 号</q>，多路时可以说 <q>大门执行 3 号</q>；钉钉、飞书群里 @机器人 也可以</span>
         <span style="flex:1"></span>
         <button type="button" class="primary" id="btn-add">添加动作</button>
       </div>
@@ -109,6 +109,7 @@
   <h2 id="run-title"></h2>
   <div class="body">
     <p class="say" id="run-say"></p>
+    <div id="run-cam-box"><label class="field" for="run-cam">作用于哪一路摄像头</label><select id="run-cam" class="field"></select></div>
     <div id="run-text-box"><label class="field" for="run-text">这次要说的内容 <span class="muted">不改就用预设的</span></label><textarea id="run-text"></textarea></div>
     <p class="warn" id="run-warn"></p>
   </div>
@@ -147,14 +148,14 @@
 <script src="/static/console.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let all = [], kinds = {}, nextCode = 1, running = null, editing = null, msgTimer = null;
+let camsList = [], all = [], kinds = {}, nextCode = 1, running = null, editing = null, msgTimer = null;
 function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 6000); }
 const needsText = (k) => k === "speaker" || k === "notify";
 
 async function load() {
   let d;
   try { d = await vva.api("GET", "/api/actions"); } catch (e) { msg(e.message, "err"); return; }
-  all = d.actions; kinds = d.kinds; nextCode = d.next_code;
+  all = d.actions; kinds = d.kinds; nextCode = d.next_code; camsList = d.cameras || [];
   $("f-kind").innerHTML = Object.entries(kinds).map(([k, v]) => `<option value="${k}">${vva.esc(v)}</option>`).join("");
   const cards = $("cards"); cards.innerHTML = "";
   if (!all.length) cards.innerHTML = '<p class="empty">还没有动作。点右上角“添加动作”配置第一个。</p>';
@@ -190,10 +191,15 @@ function card(a) {
 // ---------------- 执行
 function askRun(a) {
   if (!a.ready) { msg(`${a.code_text} 号“${a.name}”现在执行不了：${a.problem}`, "err"); if (a.kind === "webhook" && a.enabled) openEdit(a); return; }
-  if (!a.danger && !needsText(a.kind)) return doRun(a, "");
+  const pickCam = camsList.length > 1 && (a.kind === "snapshot" || a.kind === "webhook");
+  if (!a.danger && !needsText(a.kind) && !pickCam) return doRun(a, "");
+  $("run-cam-box").style.display = pickCam ? "" : "none";
+  let focus = ""; try { focus = localStorage.getItem("vva-focus") || ""; } catch (e) {}
+  $("run-cam").innerHTML = camsList.map(c => `<option value="${vva.esc(c.id)}">${vva.esc(c.label)}</option>`).join("");
+  if (camsList.some(c => c.id === focus)) $("run-cam").value = focus;
   running = a;
   $("run-title").textContent = `${a.code_text} 号 · ${a.name}`;
-  $("run-say").textContent = a.danger ? `确认执行“${a.name}”吗？` : a.summary;
+  $("run-say").textContent = a.danger ? `确认执行“${a.name}”吗？` : (a.summary || a.name);
   $("run-text-box").style.display = needsText(a.kind) ? "" : "none";
   $("run-text").value = a.config.text || "";
   $("run-warn").textContent = a.danger ? `${a.summary}。这个动作会直接作用到现场，请确认现场情况后再执行。` : "";
@@ -201,16 +207,19 @@ function askRun(a) {
   $("run-ok").className = a.danger ? "danger" : "primary";
   $("run-dlg").showModal();
 }
-async function doRun(a, text) {
+async function doRun(a, text, camera) {
   msg(`正在执行 ${a.code_text} 号…`);
   try {
-    const r = await vva.api("POST", `/api/actions/${a.code}/run`, { text, confirm: true, actor: localStorage.getItem("vva-actor") || "值班员" });
+    const r = await vva.api("POST", `/api/actions/${a.code}/run`, { text, camera: camera || "", confirm: true, actor: localStorage.getItem("vva-actor") || "值班员" });
     msg(`${a.code_text} 号 ${a.name}：${r.ok ? r.detail : "失败，" + (r.error || r.detail)}`, r.ok ? "ok" : "err");
   } catch (e) { msg(e.message, "err"); }
   load();
 }
 $("run-cancel").onclick = () => $("run-dlg").close();
-$("run-ok").onclick = () => { const a = running; $("run-dlg").close(); if (a) doRun(a, needsText(a.kind) ? $("run-text").value.trim() : ""); };
+$("run-ok").onclick = () => {
+  const a = running; $("run-dlg").close();
+  if (a) doRun(a, needsText(a.kind) ? $("run-text").value.trim() : "", $("run-cam-box").style.display === "none" ? "" : $("run-cam").value);
+};
 
 // ---------------- 新增 / 编辑
 function syncKind() {

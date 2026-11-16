@@ -26,10 +26,12 @@ class AlertService:
         self.bus = bus
 
     def create(self, duty: Any, evidence: str, images: list[tuple[str, bytes]], status: str = "pending",
-               box: list[float] | None = None, kind: str | None = None, ts: float | None = None) -> Alert:
+               box: list[float] | None = None, kind: str | None = None, ts: float | None = None,
+               camera: str = "", camera_name: str = "", station: str = "") -> Alert:
         alert = Alert(id=0, ts=ts or time.time(), duty_id=duty.id, duty_name=duty.name, condition=duty.condition,
                       kind=kind or duty.kind, level=duty.level, status=status, evidence=evidence, box=box,
-                      targets=duty.effective_targets(), rule_ref=duty.rule_ref)
+                      targets=duty.effective_targets(), rule_ref=duty.rule_ref, camera=camera,
+                      camera_name=camera_name, station=station)
         self.store.insert(alert)
         for caption, jpeg in images:
             if jpeg:
@@ -82,6 +84,18 @@ class AlertService:
         out: dict[str, dict[str, Any]] = {}
         for duty_id, by in self.store.counts(day_start()).items():
             out[duty_id] = {"count": sum(n for s, n in by.items() if s != "record"), "by_status": by}
+        return out
+
+    def camera_today(self) -> dict[str, dict[str, int]]:
+        """每路摄像头今天的告警数和待处理数：{摄像头: {"today": n, "open": n}}。"""
+        out: dict[str, dict[str, int]] = {}
+        for a in self.store.query(start=day_start(), limit=5000):
+            if a.status in ("record", "trial"):
+                continue
+            c = out.setdefault(a.camera, {"today": 0, "open": 0})
+            c["today"] += 1
+        for a in self.store.query(statuses=OPEN, limit=5000):
+            out.setdefault(a.camera, {"today": 0, "open": 0})["open"] += 1
         return out
 
     def stats(self) -> dict[str, Any]:

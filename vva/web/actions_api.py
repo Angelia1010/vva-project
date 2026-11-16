@@ -79,7 +79,9 @@ def register_action_routes(api: FastAPI, app: Any, admin_token: str, static_dir:
 
     @api.get("/api/actions")
     async def actions_list() -> JSONResponse:
-        return JSONResponse({"actions": s.list(), "runs": s.store.runs(30), "kinds": KINDS,
+        return JSONResponse({"actions": s.list(), "runs": [{**r, "camera_label": app.cameras.label(r["camera"]) if r["camera"] else ""}
+                                                            for r in s.store.runs(30)], "kinds": KINDS,
+                             "cameras": [{"id": c.id, "label": app.cameras.label(c.id)} for c in app.cameras.enabled()],
                              "next_code": s.store.next_code(), "token_required": bool(admin_token)})
 
     @api.get("/api/actions/runs")
@@ -126,5 +128,9 @@ def register_action_routes(api: FastAPI, app: Any, admin_token: str, static_dir:
             raise HTTPException(404, "没有这个动作")
         if a.danger and not body.get("confirm"):
             raise HTTPException(409, f"{a.code} 号“{a.name}”是高风险动作，需要确认后执行")
-        r = await s.run(code, actor=str(body.get("actor") or "值班员")[:20], source="web", text=str(body.get("text") or "")[:200])
+        cam = str(body.get("camera") or "")
+        if cam and app.cameras.get(cam) is None:
+            raise HTTPException(400, "没有这个摄像头")
+        r = await s.run(code, actor=str(body.get("actor") or "值班员")[:20], source="web", text=str(body.get("text") or "")[:200],
+                        camera=cam)
         return JSONResponse(r)

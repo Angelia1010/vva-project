@@ -70,6 +70,7 @@ class Duty:
     objects: list[str] = field(default_factory=list)    # 引用的技能目标（带上它们的参考图）
     rule_ref: str = ""                          # 关联的规章依据
     negatives: list[str] = field(default_factory=list)  # 误报截图（告警截图路径），复核时作为“不算”的例子
+    cameras: list[str] = field(default_factory=list)    # 适用的摄像头编号，空为全部摄像头
     source: str = "web"                         # web | voice | dingtalk | feishu | skill | template | legacy
     created_by: str = ""
     created: float = field(default_factory=time.time)
@@ -77,6 +78,7 @@ class Duty:
     trigger_count: int = 0
     last_run: float = 0.0                       # 巡检、汇报上次执行时间
     last_result: str = ""                       # 巡检上次结果
+    last_by_camera: dict[str, float] = field(default_factory=dict)   # 各摄像头上次告警时间（分开冷却）
 
     # 兼容旧的监控规则接口（后台观察、技能按 condition / cooldown_s 使用）
     @property
@@ -85,6 +87,10 @@ class Duty:
 
     def effective_targets(self) -> list[str]:
         return list(self.targets) if self.targets else list(DEFAULT_TARGETS)
+
+    def applies_to(self, camera: str | None) -> bool:
+        """这条职责管不管这一路摄像头。"""
+        return not self.cameras or not camera or camera in self.cameras
 
     def expired(self, now: float | None = None) -> bool:
         return self.temporary and self.expires > 0 and (now or time.time()) >= self.expires

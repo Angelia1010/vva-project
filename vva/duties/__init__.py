@@ -56,6 +56,9 @@ class DutyManager:
         self.scheduler = DutyScheduler(self.book, self.engine, self.router, bus, buffer, vlm, report, scene,
                                        max_side=cfg.get("verify_side", 1280))
         self.tools = DutyTools(self, bus)
+        # 由应用设置：可选的摄像头 [{"id", "name", "label"}]
+        self.camera_options: Callable[[], list[dict[str, str]]] = lambda: []
+        self.resolve_camera: Callable[[str], Any] = lambda key: None      # 名称 / 编号 → 摄像头
         self.book.on_change(lambda _: bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None}))
 
     def _negative_images(self, duty: Duty) -> list[bytes]:
@@ -103,11 +106,31 @@ class DutyManager:
             return text.replace("发", "报告发到", 1)
         return text
 
+    @property
+    def camera_info(self) -> Callable[[str], dict[str, Any]]:
+        return self.engine.camera_info
+
+    @camera_info.setter
+    def camera_info(self, fn: Callable[[str], dict[str, Any]]) -> None:
+        self.engine.camera_info = fn
+
+    def camera_text(self, d: Duty) -> str:
+        """适用的摄像头，如“大门、装卸区”；只有一路或不限时为“全部摄像头”。"""
+        opts = self.camera_options()
+        if not d.cameras or len(opts) <= 1:
+            return "全部摄像头"
+        names = {o["id"]: o["label"] for o in opts}
+        picked = [names[c] for c in d.cameras if c in names]
+        return "、".join(picked) if picked else "（摄像头已删除）"
+
     def state_of(self, d: Duty, now: float) -> tuple[str, str]:
         """(状态, 说明)：running 运行中 | idle 未到生效时间 | paused 已暂停 | trial 试运行 | error 异常"""
         problems = [p for p in (self.target_problem(t) for t in d.effective_targets()) if p]
         if not d.enabled:
             return "paused", "已暂停"
+        opts = self.camera_options()
+        if d.cameras and opts and not any(o["id"] in d.cameras for o in opts):
+            return "error", "异常：适用的摄像头都已删除或停用"
         if problems and d.mode != "trial":
             return "error", "异常：" + "；".join(dict.fromkeys(problems))
         if d.kind == "watch" and not d.in_schedule(now):
@@ -131,7 +154,8 @@ class DutyManager:
             info = today.get(d.id, {})
             out.append({**d.to_dict(), "state": state, "state_text": text, "today_count": info.get("count", 0),
                         "target_text": self.target_labels(d.effective_targets()),
-                        "action_text": self.action_text(d), "period_text": d.period_text(now)})
+                        "action_text": self.action_text(d), "period_text": d.period_text(now),
+                        "camera_text": self.camera_text(d)})
         return out
 
     def summary(self) -> str:
@@ -149,9 +173,11 @@ class DutyManager:
         long = [d for d in items if not d["temporary"]]
         temp = [d for d in items if d["temporary"]]
         lines = []
+        multi = len(self.camera_options()) > 1
         for d in long:
-            lines.append(f"- {d['id']} {d['name']}（{d['kind_label']}；处置：{d['action_text']}；期限：{d['period_text']}；"
-                         f"{d['state_text']}；今天 {d['today_count']} 次）")
+            cam = f"摄像头：{d['camera_text']}；" if multi else ""
+            lines.append(f"- {d['id']} {d['name']}（{d['kind_label']}；{cam}处置：{d['action_text']}；"
+                         f"期限：{d['period_text']}；{d['state_text']}；今天 {d['today_count']} 次）")
         for d in temp:
             lines.append(f"- {d['id']} {d['name']}（临时任务；处置：{d['action_text']}；期限：{d['period_text']}；"
                          f"{d['state_text']}）")
@@ -162,16 +188,19 @@ class DutyManager:
     async def parse(self, text: str, objects: list[str]) -> dict[str, Any]:
         return await parse_duty(self.llm, text, self.target_options(), objects, self.scene())
 
-    async def test(self, duty: Duty) -> dict[str, Any]:
-        """试一下：用当前画面检查一次，不发通知、不计入告警。"""
+    async def test(self, duty: Duty, camera: str = "") -> dict[str, Any]:
+        """试一下：用当前画面检查一次，不发通知、不计入告警。camera：在哪一路试，不传为职责适用的第一路。"""
+        if not camera:
+            cams = self.scheduler.cameras_for(duty)
+            camera = cams[0] if cams else ""
         if duty.kind == "inspect":
-            r = await self.scheduler.inspect(duty)
+            r = await self.scheduler.inspect(duty, camera)
             return {"ok": True, "match": bool(r.get("abnormal")), "evidence": f"{r.get('result', '')}。{r.get('evidence', '')}",
-                    "image": r.get("jpeg")}
+                    "image": r.get("jpeg"), "camera": camera}
         if duty.kind == "report":
             return {"ok": True, "match": False, "evidence": "汇报类职责到点发送报告，无需检查画面"}
-        r = await self.verifier.check(duty, wait=False)
-        return {"ok": True, "match": r.ok, "evidence": r.evidence or ("不成立" if not r.ok else ""), "box": r.box,
+        r = await self.verifier.check(duty, wait=False, camera=camera)
+        return {"ok": True, "match": r.ok, "camera": camera, "evidence": r.evidence or ("不成立" if not r.ok else ""), "box": r.box,
                 "image": r.images[0][1] if r.images else None}
 
     def background_tasks(self) -> list[Coroutine[Any, Any, None]]:

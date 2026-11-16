@@ -20,7 +20,9 @@ class ActionTools(ToolProvider):
             _fn("run_action", "执行一个动作。用于“执行 3 号”“3 号”“喊话让他们离开”“抓拍一张”等明确的要求。",
                 {"code": {"type": "string", "description": "动作编号（如 3）或名称"},
                  "text": {"type": "string", "description": "喇叭要播报或通知要发送的内容，可选；不填用预设内容"},
-                 "confirm": {"type": "boolean", "description": "高风险动作在用户明确确认之后才传 true"}},
+                 "confirm": {"type": "boolean", "description": "高风险动作在用户明确确认之后才传 true"},
+                 "camera": {"type": "string", "description": "可选，作用于哪一路摄像头（名称或编号），如抓拍哪一路；"
+                                                            "不填则为用户在值守台正在看的那一路"}},
                 ["code"]),
         ]
 
@@ -28,7 +30,13 @@ class ActionTools(ToolProvider):
         return {"actions": [{"code": a["code"], "name": a["name"], "what": a["summary"], "needs_confirm": a["danger"],
                              "ready": a["ready"], "problem": a["problem"]} for a in self.s.list() if a["enabled"]]}
 
-    async def tool_run_action(self, code: Any, text: str = "", confirm: bool = False, **_: Any) -> dict:
+    async def tool_run_action(self, code: Any, text: str = "", confirm: bool = False, camera: str = "", **_: Any) -> dict:
+        cam_id = turn.current_camera() or ""
+        if camera:
+            cam = self.s.resolve_camera(camera)
+            if cam is None:
+                return {"error": f"没有找到摄像头“{camera}”"}
+            cam_id = cam.id
         a = self.s.find(code)
         if a is None:
             return {"error": f"没有“{code}”这个动作，可用的编号用 list_actions 查"}
@@ -39,4 +47,5 @@ class ActionTools(ToolProvider):
                     "say": f"{a.code} 号“{a.name}”是高风险动作（{a.summary or a.name}）。请向用户复述并询问是否确认执行；"
                            "用户明确确认后再带 confirm=true 调用。现在还没有执行。"}
         source = "voice" if session == "web" else session.split(":")[0]
-        return await self.s.run(a.code, actor=f"值班员（{'语音/网页' if session == 'web' else session}）", source=source, text=text)
+        return await self.s.run(a.code, actor=f"值班员（{'语音/网页' if session == 'web' else session}）", source=source, text=text,
+                                camera=cam_id)

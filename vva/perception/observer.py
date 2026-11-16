@@ -5,6 +5,9 @@
 
 规则（职责）命中后：设置了 on_hit 时交给它（职责引擎负责复核、告警、通知）；否则直接发 TOPIC_ALERT（旧行为）。
 只判断当前生效的规则：rules 有 active() 方法时用它（职责清单），否则用 list()。
+
+多路摄像头时每路一个 Observer（camera_id 不同），只判断适用于这一路的职责；视觉模型由调度器统一排队，
+排队中被新任务替换（Superseded）时这一轮直接跳过。
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ from vva.agent import prompts
 from vva.core.bus import TOPIC_ALERT, TOPIC_OBSERVATION, TOPIC_UI, EventBus
 from vva.core.jsonutil import parse_json
 from vva.perception.imaging import encode_jpeg, resize_max_side
+from vva.perception.scheduler import Superseded
 from vva.perception.timeline import Timeline, TimelineEntry, WatchRules
 from vva.video.frame_buffer import FrameBuffer
 
@@ -41,10 +45,16 @@ class Observer:
                  image_side: int = 1024, scene_hint: str = "",
                  hint_provider: Callable[[], str] | None = None,
                  references: Callable[[str], list[tuple[str, bytes]]] | None = None,
-                 on_hit: Callable[[str, str, float, bytes], Any] | None = None, **_: Any) -> None:
-        """hint_provider：动态的场景说明（如常驻技能、岗位说明）；references：按规则文字取参考图 [(说明, jpeg)]；
-        on_hit(规则编号, 依据, 画面时间, 画面)：命中后的处理，不设置则直接发提醒。"""
+                 on_hit: Callable[..., Any] | None = None, camera_id: str = "",
+                 camera_name: Callable[[], str] | str = "", paused: Callable[[], bool] | None = None, **_: Any) -> None:
+        """hint_provider：动态的场景说明（如常驻技能、岗位说明），多路时以摄像头编号为参数；
+        references：按规则文字取参考图 [(说明, jpeg)]；
+        on_hit(规则编号, 依据, 画面时间, 画面[, camera=摄像头])：命中后的处理，不设置则直接发提醒；
+        paused()：这一路所在岗位暂停值守时为 True（照常记录时间线，不判断职责）。"""
         self.buffer, self.vlm, self.timeline, self.rules, self.bus = buffer, vlm, timeline, rules, bus
+        self.camera_id = camera_id
+        self._camera_name = camera_name
+        self._paused_fn = paused
         self.interval = float(interval)
         self.max_idle = float(max_idle)
         self.rule_check_interval = float(rule_check_interval)
@@ -91,9 +101,18 @@ class Observer:
                 return r
         return None
 
+    @property
+    def camera_name(self) -> str:
+        return self._camera_name() if callable(self._camera_name) else self._camera_name
+
     def _watching(self) -> list[Any]:
+        if self._paused_fn and self._paused_fn():
+            return []
         active = getattr(self.rules, "active", None)
-        return list(active()) if callable(active) else self.rules.list()
+        items = list(active(camera=self.camera_id) if self.camera_id else active()) if callable(active) else self.rules.list()
+        if self.camera_id:
+            items = [r for r in items if not hasattr(r, "applies_to") or r.applies_to(self.camera_id)]
+        return items
 
     def _reference_images(self) -> list[tuple[str, bytes]]:
         """有监控规则提到技能里的目标时，带上它们的参考图帮助辨认。"""
@@ -104,14 +123,17 @@ class Observer:
         return self.references(" ".join(words))[:4]
 
     def build_prompt(self, refs: list[tuple[str, bytes]] | None = None) -> str:
-        last = self.timeline.latest()
+        last = self.timeline.latest(self.camera_id or None)
         prev = f"\n上一次的记录（供对比变化）：{last.summary}\n" if last else ""
         rules = ""
         watching = self._watching()
         if watching:
             lines = "\n".join(f"- {r.id}：{r.condition}" for r in watching)
             rules = prompts.OBSERVE_RULES_BLOCK.format(rules=lines)
-        hints = [h for h in (self.scene_hint, self.hint_provider() if self.hint_provider else "") if h]
+        dyn = ""
+        if self.hint_provider:
+            dyn = self.hint_provider(self.camera_id) if self.camera_id else self.hint_provider()
+        hints = [h for h in (self.scene_hint, dyn) if h]
         hint = "\n场景说明：" + "\n".join(hints) + "\n" if hints else ""
         if refs:
             hint += prompts.OBSERVE_REFS_BLOCK.format(n_ref=len(refs), refs="；".join(
@@ -137,8 +159,11 @@ class Observer:
         self._last_frame_ts = frame.ts
         jpeg = encode_jpeg(resize_max_side(frame.image, self.image_side), 85)
         refs = self._reference_images()
-        text = await self.vlm.ask([*(img for _, img in refs), jpeg], self.build_prompt(refs),
-                                  system=prompts.OBSERVER_SYSTEM, json_mode=True)
+        try:
+            text = await self.vlm.ask([*(img for _, img in refs), jpeg], self.build_prompt(refs),
+                                      system=prompts.OBSERVER_SYSTEM, json_mode=True)
+        except Superseded:
+            return None
         data = parse_json(text)
         if not isinstance(data, dict) or not data.get("summary"):
             log.warning("观察结果无法解析：%s", (text or "")[:200])
@@ -150,7 +175,7 @@ class Observer:
             ts=frame.ts, summary=str(data.get("summary", "")).strip(),
             people_count=int(pc) if isinstance(pc, (int, float)) else None,
             objects=_as_list(data.get("objects")), activities=_as_list(data.get("activities")),
-            anomalies=_as_list(data.get("anomalies")),
+            anomalies=_as_list(data.get("anomalies")), camera=self.camera_id, camera_name=self.camera_name,
         )
         self.timeline.add(entry)
         self.bus.publish(TOPIC_UI, {"type": "timeline", **entry.to_dict()})
@@ -162,16 +187,21 @@ class Observer:
             if rule is None:
                 log.info("后台观察返回了未知的规则：%s（%s）", rid, evidence)
                 continue
-            log.info("疑似命中【%s】：%s", getattr(rule, "name", rule.condition), evidence)
+            log.info("疑似命中【%s】%s：%s", getattr(rule, "name", rule.condition),
+                     f"（{self.camera_name or self.camera_id}）" if self.camera_id else "", evidence)
             if self.on_hit:
-                self.on_hit(rule.id, evidence, frame.ts, jpeg)
+                if self.camera_id:
+                    self.on_hit(rule.id, evidence, frame.ts, jpeg, camera=self.camera_id)
+                else:
+                    self.on_hit(rule.id, evidence, frame.ts, jpeg)
             elif self.rules.mark_triggered(rule.id, now):
                 self.bus.publish(TOPIC_ALERT, {"rule_id": rule.id, "condition": rule.condition,
                                                "evidence": evidence, "ts": frame.ts})
         return entry
 
     async def run(self) -> None:
-        log.info("后台观察已启动，间隔 %.1f 秒", self.interval)
+        log.info("后台观察已启动%s，间隔 %.1f 秒", f"（{self.camera_name or self.camera_id}）" if self.camera_id else "",
+                 self.interval)
         while True:
             t0 = time.time()
             try:

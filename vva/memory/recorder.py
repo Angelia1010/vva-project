@@ -47,19 +47,22 @@ class MemoryRecorder:
         if self.save_keyframes and jpeg:
             try:
                 small = await asyncio.to_thread(self._shrink, jpeg)
-                frame = await asyncio.to_thread(self.keyframes.save, entry.ts, small)
+                frame = await asyncio.to_thread(self.keyframes.save, entry.ts, small, getattr(entry, "camera", ""))
             except Exception as e:
                 log.warning("保存关键帧失败：%s", e)
         ev = MemoryEvent(ts=entry.ts, kind=KIND_OBSERVATION, summary=entry.summary, people=entry.people_count,
                          details={"objects": entry.objects, "activities": entry.activities,
-                                  "anomalies": entry.anomalies}, frame=frame)
+                                  "anomalies": entry.anomalies, "camera_name": getattr(entry, "camera_name", "")},
+                         frame=frame, camera=getattr(entry, "camera", ""))
         ev.id = self.store.add_event(ev)
         return ev
 
     def record_alert(self, alert: dict[str, Any]) -> None:
         text = f"提醒：{alert.get('condition', '')}" + (f"（{alert['evidence']}）" if alert.get("evidence") else "")
         self.store.add_event(MemoryEvent(ts=float(alert.get("ts") or time.time()), kind=KIND_ALERT,
-                                         summary=text, details={"rule_id": alert.get("rule_id")}))
+                                         summary=text, camera=alert.get("camera") or "",
+                                         details={"rule_id": alert.get("rule_id"),
+                                                  "camera_name": alert.get("camera_name") or ""}))
 
     def record_command(self, text: str, source: str = "") -> None:
         self.store.add_event(MemoryEvent(ts=time.time(), kind=KIND_COMMAND, summary=f"操作员指令：{text}",

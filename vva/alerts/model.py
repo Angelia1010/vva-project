@@ -43,9 +43,17 @@ class Alert:
     handler: str = ""
     handled_ts: float = 0.0
     note: str = ""
+    camera: str = ""                    # 摄像头编号
+    camera_name: str = ""               # 摄像头名称（存下来，摄像头改名后历史告警不变）
+    station: str = ""                   # 岗位名称
+
+    @property
+    def where(self) -> str:
+        """“1 号仓库·大门”这样的位置说明。"""
+        return "·".join(x for x in (self.station, self.camera_name) if x)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d.update(time=fmt_ts(self.ts), status_label=STATUS.get(self.status, self.status),
+        d.update(time=fmt_ts(self.ts), status_label=STATUS.get(self.status, self.status), where=self.where,
                  handled_text=fmt_ts(self.handled_ts) if self.handled_ts else "")
         return d

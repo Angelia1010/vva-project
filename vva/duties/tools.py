@@ -54,7 +54,9 @@ class DutyTools(ToolProvider):
                 {"condition": {"type": "string", "description": "能从单张画面判断的描述，如“有快递员或快递车到门口”"},
                  "name": {"type": "string", "description": "简短名称，4~8 个字，可选"},
                  "hours": {"type": "number", "description": "有效多少小时，可选；不填则到今天结束"},
-                 "until": {"type": "string", "description": "有效到几点，如 18:00，可选"}},
+                 "until": {"type": "string", "description": "有效到几点，如 18:00，可选"},
+                 "camera": {"type": "string", "description": "可选，只盯哪一路摄像头（名称或编号，如“大门”）；"
+                                                            "用户说“这里”“这个画面”时填当前正在看的那一路；不填则所有摄像头"}},
                 ["condition"]),
             _fn("pause_duty", "暂停一项职责或临时任务。", {"duty_id": did}, ["duty_id"]),
             _fn("resume_duty", "恢复一项已暂停的职责或临时任务。", {"duty_id": did}, ["duty_id"]),
@@ -62,7 +64,8 @@ class DutyTools(ToolProvider):
                 {"duty_id": did}, ["duty_id"]),
             _fn("query_alerts", "查询告警记录：某项职责最近的告警次数、时间、依据、处理状态。",
                 {"duty": {"type": "string", "description": "职责名称或编号，可选；不填查全部"},
-                 "hours": {"type": "number", "description": "最近多少小时，默认查今天"}}, []),
+                 "hours": {"type": "number", "description": "最近多少小时，默认查今天"},
+                 "camera": {"type": "string", "description": "可选，只看某一路摄像头的告警（名称或编号）"}}, []),
         ]
 
     def _find(self, key: str) -> Any:
@@ -77,13 +80,20 @@ class DutyTools(ToolProvider):
         return {"duties": [_brief(d) for d in items if not d["temporary"]],
                 "temporary": [_brief(d) for d in items if d["temporary"]]}
 
-    async def tool_add_task(self, condition: str, name: str = "", hours: float = 0, until: str = "", **_: Any) -> dict:
+    async def tool_add_task(self, condition: str, name: str = "", hours: float = 0, until: str = "", camera: str = "",
+                            **_: Any) -> dict:
         session = turn.current_session()
+        cams: list[str] = []
+        if camera:
+            cam = self.m.resolve_camera(camera)
+            if cam is None:
+                return {"error": f"没有找到摄像头“{camera}”，可选：" + "、".join(o["label"] for o in self.m.camera_options())}
+            cams = [cam.id]
         duty = self.m.book.create(actor=f"值班员（{session or '网页'}）", name=name or condition[:10], condition=condition,
                                   temporary=True, expires=end_of_task(hours, until), targets=targets_for_session(session),
                                   source="voice" if session in WEB_SESSIONS else str(session).split(":")[0],
-                                  cooldown_s=300, verify=True)
-        return {"ok": True, "id": duty.id, "name": duty.name, "condition": duty.condition,
+                                  cooldown_s=300, verify=True, cameras=cams)
+        return {"ok": True, "id": duty.id, "name": duty.name, "condition": duty.condition, "camera": self.m.camera_text(duty),
                 "until": fmt_ts(duty.expires), "notify": self.m.target_labels(duty.effective_targets())}
 
     async def _set_enabled(self, duty_id: str, enabled: bool) -> dict:
@@ -114,18 +124,23 @@ class DutyTools(ToolProvider):
         self.m.book.remove(d.id, actor)
         return {"ok": True, "removed": [d.name]}
 
-    async def tool_query_alerts(self, duty: str = "", hours: float = 0, **_: Any) -> dict:
+    async def tool_query_alerts(self, duty: str = "", hours: float = 0, camera: str = "", **_: Any) -> dict:
         start = time.time() - float(hours) * 3600 if hours else day_start()
         d = self._find(duty) if duty else None
         if duty and d is None:
             return {"error": f"没有找到职责“{duty}”"}
-        alerts = [a for a in self.m.alerts.store.query(start=start, duty_id=d.id if d else "", limit=200)
+        cam = self.m.resolve_camera(camera) if camera else None
+        if camera and cam is None:
+            return {"error": f"没有找到摄像头“{camera}”"}
+        alerts = [a for a in self.m.alerts.store.query(start=start, duty_id=d.id if d else "", limit=200,
+                                                        camera=cam.id if cam else "")
                   if a.status != "record"]
-        return {"from": fmt_ts(start), "duty": d.name if d else "全部", "count": len(alerts),
-                "recent": [{"time": fmt_ts(a.ts), "duty": a.duty_name, "evidence": a.evidence,
+        return {"from": fmt_ts(start), "duty": d.name if d else "全部", "camera": cam.name if cam else "全部",
+                "count": len(alerts),
+                "recent": [{"time": fmt_ts(a.ts), "where": a.where, "duty": a.duty_name, "evidence": a.evidence,
                             "status": STATUS.get(a.status, a.status)} for a in alerts[:5]]}
 
 
 def _brief(d: dict[str, Any]) -> dict[str, Any]:
-    return {"id": d["id"], "name": d["name"], "type": d["kind_label"], "action": d["action_text"],
+    return {"id": d["id"], "name": d["name"], "type": d["kind_label"], "camera": d.get("camera_text", ""), "action": d["action_text"],
             "period": d["period_text"], "state": d["state_text"], "today": d["today_count"]}

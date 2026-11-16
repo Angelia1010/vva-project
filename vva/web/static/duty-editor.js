@@ -5,7 +5,7 @@
   const KINDS = [["watch", "盯守"], ["inspect", "巡检"], ["report", "汇报"]];
   const LEVELS = [["normal", "一般"], ["important", "重要"], ["urgent", "紧急"]];
   const WEEK = [["", "每天"], ["1,2,3,4,5", "工作日"], ["6,7", "周末"]];
-  let state = null, onSaved = null, meta = { targets: [], objects: [] };
+  let state = null, onSaved = null, meta = { targets: [], objects: [], cameras: [] };
 
   function shell() {
     if (document.getElementById("duty-drawer")) return;
@@ -38,15 +38,18 @@
   async function loadMeta() {
     try {
       const r = await vva.api("GET", "/api/duties");
-      meta = { targets: r.targets || [], objects: r.objects || [] };
-    } catch (e) { meta = { targets: [{ id: "web", label: "值守台" }], objects: [] }; }
-    try { document.getElementById("dd-station").textContent = (await vva.api("GET", "/api/station")).name; } catch (e) {}
+      meta = { targets: r.targets || [], objects: r.objects || [], cameras: r.cameras || [] };
+    } catch (e) { meta = { targets: [{ id: "web", label: "值守台" }], objects: [], cameras: [] }; }
+    try {
+      document.getElementById("dd-station").textContent = meta.cameras.length > 1 ? `共 ${meta.cameras.length} 路摄像头`
+        : (await vva.api("GET", "/api/station")).name;
+    } catch (e) {}
   }
 
   // ---------------------------------------------------------------- 编辑表单
   const blank = () => ({ name: "", kind: "watch", condition: "", hours: "", weekdays: [], times: [], level: "normal",
     targets: meta.targets.some(t => t.id === "default") ? ["default", "web"] : ["web"], voice_text: "", verify: true,
-    min_duration_s: 0, cooldown_s: 600, objects: [], rule_ref: "", mode: "live", enabled: true });
+    min_duration_s: 0, cooldown_s: 600, objects: [], rule_ref: "", mode: "live", enabled: true, cameras: [] });
 
   function seg(name, options, value) {
     return `<div class="seg" role="group" aria-label="${name}">` + options.map(([v, t]) =>
@@ -84,6 +87,9 @@
         <textarea id="dd-cond" placeholder="如：画面中有人吸烟，或手里夹着点燃的香烟">${esc(s.condition)}</textarea>
         <div id="dd-hints"></div>
       </div>
+      ${meta.cameras.length > 1 && s.kind !== "report" ? `<div><span class="lbl">摄像头 <span class="muted">· 这条职责盯哪几路，不选为全部</span></span>
+        <div class="chips"><button type="button" class="chip" data-chip="cameras" data-v="" aria-pressed="${!(s.cameras || []).length}">全部摄像头</button>${meta.cameras.map(c =>
+          `<button type="button" class="chip" data-chip="cameras" data-v="${esc(c.id)}" aria-pressed="${(s.cameras || []).includes(c.id)}">${esc(c.label)}</button>`).join("")}</div></div>` : ""}
       ${meta.objects.length && s.kind !== "report" ? `<div><span class="lbl">引用学过的目标 <span class="muted">· 判断时带上它们的参考图</span></span>
         ${chipList("objects", meta.objects.map(o => ({ id: o, label: o })), s.objects || [])}</div>` : ""}
       ${s.kind === "watch" ? `<div class="row2">
@@ -156,6 +162,13 @@
       render();
     });
     body.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => {
+      if (b.dataset.chip === "cameras") {           // “全部摄像头”与具体摄像头互斥
+        state.duty = collect();
+        const v = b.dataset.v, list = (state.duty.cameras || []).slice();
+        const i = list.indexOf(v);
+        state.duty.cameras = !v ? [] : (i >= 0 ? list.filter(x => x !== v) : [...list, v]);
+        render(); return;
+      }
       const k = b.dataset.chip, v = b.dataset.v, list = state.duty[k] || (state.duty[k] = []);
       const i = list.indexOf(v); if (i >= 0) list.splice(i, 1); else list.push(v);
       b.setAttribute("aria-pressed", String(i < 0));
@@ -188,12 +201,13 @@
     if (!duty.condition) { msg("请先填写要看什么", "err"); return; }
     box.innerHTML = `<div class="testbox"><div class="res"><span class="muted">正在检查当前画面…</span></div></div>`;
     try {
-      const r = await vva.api("POST", "/api/duties/test", { duty });
+      const camera = (duty.cameras || [])[0] || window.vvaFocusCamera || "";
+      const r = await vva.api("POST", "/api/duties/test", { duty, camera });
       const boxStyle = r.box ? `left:${r.box[0] * 100}%;top:${r.box[1] * 100}%;width:${(r.box[2] - r.box[0]) * 100}%;height:${(r.box[3] - r.box[1]) * 100}%` : "";
       box.innerHTML = `<div class="testbox">
         <div class="shot">${r.image ? `<img src="${r.image}" alt="检查时的画面">` : ""}${boxStyle ? `<div class="box" style="${boxStyle}"></div>` : ""}</div>
         <div class="res"><span class="${r.match ? "hit" : "miss"}">${r.match ? (duty.kind === "inspect" ? "异常" : "命中") : (duty.kind === "inspect" ? "正常" : "当前未命中")}</span>
-          <span>${esc(r.evidence || "")}</span>
+          <span>${r.camera_label && meta.cameras.length > 1 ? `<b>${esc(r.camera_label)}</b>：` : ""}${esc(r.evidence || "")}</span>
           <span><button type="button" class="ghost" id="dd-retest" style="min-height:28px;padding:2px 10px">重新检查</button></span></div></div>`;
       document.getElementById("dd-retest").onclick = runTest;
       renderHints(r.hints || []);
@@ -294,6 +308,7 @@ window.dutyCard = function (d, actions, opts) {
       <dl class="facts">
         <div><dt>处置</dt><dd class="${noPush ? "warn" : ""}">${esc(d.action_text || "")}</dd></div>
         <div><dt>期限</dt><dd>${esc(d.period_text || d.schedule)}</dd></div>
+        ${d.camera_text && d.camera_text !== "全部摄像头" ? `<div><dt>摄像头</dt><dd>${esc(d.camera_text)}</dd></div>` : ""}
       </dl>
       ${showState || d.temporary ? `<div class="state ${d.state}">${esc(d.state_text)}${d.temporary && d.created_by ? " · " + esc(d.created_by) + "下达" : ""}</div>` : ""}
     </summary>

@@ -12,7 +12,7 @@
   POST /api/duties/templates/{tpl}       按模板批量添加 {"names": [...], "targets": [...], "mode": "live|trial"}
   GET  /api/duties/changes               最近的职责变更（全部）
   GET  /api/duties/{id}/changes          某条职责的变更记录
-  GET  /api/alerts                       告警列表 ?status=pending&duty=d1&days=7（days=0 为全部时间；只看待处理时不限日期）
+  GET  /api/alerts                       告警列表 ?status=pending&duty=d1&camera=cam1&days=7（days=0 为全部时间；只看待处理时不限日期）
   GET  /api/alerts/{id}                  告警详情（含处理经过）
   POST /api/alerts/{id}/action           处理 {"action": "ack|handling|resolve|false|trial_ok", "actor", "note", "add_ref"}
   GET  /api/alerts/image/{path}          告警截图
@@ -70,7 +70,7 @@ def clean_duty(body: dict[str, Any], partial: bool = False) -> dict[str, Any]:
                 raise HTTPException(400, f"{k} 应为数字") from e
     if "cooldown_s" in out:
         out["cooldown_s"] = max(5.0, out["cooldown_s"])
-    for k in ("targets", "objects", "times"):
+    for k in ("targets", "objects", "times", "cameras"):
         if k in out:
             out[k] = [str(x).strip() for x in out[k] or [] if str(x).strip()]
     for t in out.get("times", []):
@@ -105,10 +105,21 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
         api.add_api_route(path, page_route(file), methods=["GET"])
 
     # ---------------------------------------------------------------- 首屏
+    def check_cameras(fields: dict[str, Any]) -> dict[str, Any]:
+        if "cameras" in fields:
+            known = {c.id for c in app.cameras.list()}
+            bad = [c for c in fields["cameras"] if c not in known]
+            if bad:
+                raise HTTPException(400, f"摄像头不存在：{'、'.join(bad)}")
+        return fields
+
     @api.get("/api/overview")
     async def overview() -> JSONResponse:
+        from vva.web.cameras_api import camera_summaries, station_summaries
         return JSONResponse({"station": app.station.to_dict(), "duties": m.status_list(), "stats": m.alerts.stats(),
-                             "open_alerts": m.alerts.open_alerts(30), "token_required": bool(admin_token)})
+                             "open_alerts": m.alerts.open_alerts(30), "token_required": bool(admin_token),
+                             "cameras": camera_summaries(app), "stations": station_summaries(app),
+                             "focus": app.focus_camera or app.cameras.default_id()})
 
     @api.get("/api/station")
     async def get_station() -> JSONResponse:
@@ -120,8 +131,8 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
         changes = {k: body[k] for k in ("name", "area", "scene", "owner", "paused") if k in body}
         if "name" in changes and not str(changes["name"]).strip():
             raise HTTPException(400, "请填写岗位名称")
-        st = app.station.update(**changes)
-        app.rules.paused = st.paused
+        app.station.update(**changes)
+        app.rules.paused = app.station.all_paused()
         app.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})
         return JSONResponse(app.station.to_dict())
 
@@ -129,7 +140,7 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
     @api.get("/api/duties")
     async def list_duties() -> JSONResponse:
         return JSONResponse({"duties": m.status_list(), "targets": m.target_options(), "objects": objects(),
-                             "token_required": bool(admin_token)})
+                             "cameras": m.camera_options(), "token_required": bool(admin_token)})
 
     @api.get("/api/duties/templates")
     async def templates() -> JSONResponse:
@@ -153,13 +164,21 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
             if not fields.get("condition"):
                 raise HTTPException(400, "请先填写要看什么")
             duty = Duty(id="test", name=fields.pop("name", "") or "试一下", condition=fields.pop("condition"), **fields)
-        r = await m.test(duty)
+        cam = str(body.get("camera") or "")
+        if cam and app.cameras.get(cam) is None:
+            cam = ""                    # 网页记住的摄像头已删除：改用职责适用的第一路
+        if cam and duty.cameras and cam not in duty.cameras:
+            cam = ""                    # 这条职责不管当前看的这一路
+        r = await m.test(duty, cam)
+        if r.get("camera"):
+            r["camera_label"] = app.cameras.label(r["camera"])
         image = r.pop("image", None)
         r["image"] = "data:image/jpeg;base64," + base64.b64encode(image).decode() if image else ""
         if body.get("notify"):
             m.router.bus.publish(TOPIC_ALERT, {"kind": "alert", "name": duty.name, "condition": f"【测试】{duty.name}",
                                            "evidence": r.get("evidence") or "这是一条测试通知", "level": duty.level,
-                                           "station": app.station.station.name, "ts": time.time(),
+                                           "station": app.cameras.label(r.get("camera")) or app.station.station.name,
+                                           "ts": time.time(),
                                            "targets": [t for t in duty.effective_targets() if t != "voice"]})
             r["notified"] = m.target_labels([t for t in duty.effective_targets() if t != "voice"])
         r["hints"] = capability_hints(duty.condition, duty.kind)
@@ -169,7 +188,7 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
     async def create(request: Request, body: dict) -> JSONResponse:
         actor = check(request)
         try:
-            duty = m.book.create(actor=actor, source=str(body.get("source") or "web"), **clean_duty(body))
+            duty = m.book.create(actor=actor, source=str(body.get("source") or "web"), **check_cameras(clean_duty(body)))
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         return JSONResponse(duty.to_dict())
@@ -191,14 +210,16 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
                 fields["targets"] = list(body["targets"])
             if body.get("mode") in MODES and fields.get("kind", "watch") == "watch":
                 fields["mode"] = body["mode"]
-            created.append(m.book.create(actor=actor, source="template", **clean_duty(fields)).to_dict())
+            if body.get("cameras"):
+                fields["cameras"] = list(body["cameras"])
+            created.append(m.book.create(actor=actor, source="template", **check_cameras(clean_duty(fields))).to_dict())
         return JSONResponse({"created": created})
 
     @api.put("/api/duties/{duty_id}")
     async def update(duty_id: str, request: Request, body: dict) -> JSONResponse:
         actor = check(request)
         try:
-            duty = m.book.update(duty_id, actor=actor, **clean_duty(body, partial=True))
+            duty = m.book.update(duty_id, actor=actor, **check_cameras(clean_duty(body, partial=True)))
         except KeyError as e:
             raise HTTPException(404, "没有这条职责") from e
         return JSONResponse(duty.to_dict())
@@ -224,15 +245,16 @@ def register_duty_routes(api: FastAPI, app: Any, admin_token: str, static_dir: s
 
     # ---------------------------------------------------------------- 告警
     @api.get("/api/alerts")
-    async def alerts(status: str = "", duty: str = "", days: float = 7) -> JSONResponse:
+    async def alerts(status: str = "", duty: str = "", days: float = 7, camera: str = "") -> JSONResponse:
         statuses = tuple(s for s in status.split(",") if s) if status else ()
         # days <= 0 表示全部时间；只看待处理 / 处理中时不限日期（没处理的告警不管哪天的都要能看到）
         open_only = bool(statuses) and set(statuses) <= {"pending", "handling"}
         start = 0.0 if days <= 0 or open_only else day_start() - (max(1.0, days) - 1) * 86400
-        items = [a for a in m.alerts.list(start=start, duty_id=duty, statuses=statuses, limit=500)
+        items = [a for a in m.alerts.list(start=start, duty_id=duty, statuses=statuses, limit=500, camera=camera)
                  if status or a["status"] != "record"]
         return JSONResponse({"alerts": items, "stats": m.alerts.stats(),
-                             "duties": [{"id": d.id, "name": d.name} for d in m.book.list()]})
+                             "duties": [{"id": d.id, "name": d.name} for d in m.book.list()],
+                             "cameras": [{"id": c.id, "label": app.cameras.label(c.id)} for c in app.cameras.list()]})
 
     @api.get("/api/alerts/image/{rel:path}")
     async def alert_image(rel: str) -> FileResponse:

@@ -16,10 +16,12 @@ class KeyframeStore:
         self.root = root
         os.makedirs(os.path.join(root, "frames"), exist_ok=True)
 
-    def save(self, ts: float, jpeg: bytes) -> str:
+    def save(self, ts: float, jpeg: bytes, tag: str = "") -> str:
+        """tag：摄像头编号，多路同一时刻的关键帧不会互相覆盖。"""
         t = time.localtime(ts)
+        safe = "".join(ch for ch in tag if ch.isalnum() or ch in "-_")
         rel = os.path.join("frames", time.strftime("%Y%m%d", t),
-                           time.strftime("%H%M%S", t) + f"_{int((ts % 1) * 1000):03d}.jpg")
+                           time.strftime("%H%M%S", t) + f"_{int((ts % 1) * 1000):03d}" + (f"_{safe}" if safe else "") + ".jpg")
         path = os.path.join(self.root, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:

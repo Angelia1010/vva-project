@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS duty_changes (
 """
 
 EDITABLE = ("name", "condition", "kind", "enabled", "mode", "temporary", "expires", "hours", "weekdays", "times",
-            "level", "targets", "voice_text", "verify", "min_duration_s", "cooldown_s", "objects", "rule_ref", "negatives")
+            "level", "targets", "voice_text", "verify", "min_duration_s", "cooldown_s", "objects", "rule_ref", "negatives",
+            "cameras")
 
 
 class DutyStore:
@@ -143,12 +144,14 @@ class DutyBook:
     def list(self) -> list[Duty]:
         return list(self._duties.values())
 
-    def active(self, now: float | None = None) -> list[Duty]:
-        """后台观察这一轮要判断的盯守类职责。"""
+    def active(self, now: float | None = None, camera: str | None = None) -> list[Duty]:
+        """后台观察这一轮要判断的盯守类职责（指定摄像头时只要适用于这一路的）。"""
         if self.paused:
             return []
         now = now or time.time()
-        return [d for d in self._duties.values() if d.active(now) and self._snooze.get(d.id, 0) <= now]
+        return [d for d in self._duties.values()
+                if d.active(now) and d.applies_to(camera) and self._snooze.get(d.id, 0) <= now
+                and (not camera or self._snooze.get(f"{d.id}@{camera}", 0) <= now)]
 
     def purge_expired(self, now: float | None = None) -> list[Duty]:
         """删除到期的临时任务，返回被删除的。"""
@@ -162,21 +165,28 @@ class DutyBook:
             self._changed()
         return gone
 
-    def snooze(self, duty_id: str, seconds: float) -> None:
-        self._snooze[duty_id] = time.time() + seconds
+    def snooze(self, duty_id: str, seconds: float, camera: str = "") -> None:
+        self._snooze[f"{duty_id}@{camera}" if camera else duty_id] = time.time() + seconds
 
-    def cooling(self, duty_id: str, now: float | None = None) -> bool:
+    @staticmethod
+    def _last(d: Duty, camera: str) -> float:
+        """上次告警时间：指定摄像头时按这一路算（不同摄像头分开冷却）。"""
+        return d.last_by_camera.get(camera, 0.0) if camera else d.last_triggered
+
+    def cooling(self, duty_id: str, now: float | None = None, camera: str = "") -> bool:
         d = self._duties.get(duty_id)
-        return bool(d and (now or time.time()) - d.last_triggered < d.cooldown_s)
+        return bool(d and (now or time.time()) - self._last(d, camera) < d.cooldown_s)
 
-    def mark_triggered(self, duty_id: str, now: float | None = None) -> bool:
+    def mark_triggered(self, duty_id: str, now: float | None = None, camera: str = "") -> bool:
         """命中后返回 True；冷却期内重复命中返回 False。"""
         d = self._duties.get(duty_id)
         if d is None:
             return False
         now = now or time.time()
-        if now - d.last_triggered < d.cooldown_s:
+        if now - self._last(d, camera) < d.cooldown_s:
             return False
+        if camera:
+            d.last_by_camera[camera] = now
         d.last_triggered = now
         d.trigger_count += 1
         self._save(d)

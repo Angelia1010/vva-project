@@ -83,6 +83,8 @@ class ActionStore:
     def __init__(self, db: SqliteDB) -> None:
         self.db = db
         db.script(SCHEMA)
+        if "camera" not in {r["name"] for r in db.query("PRAGMA table_info(action_runs)")}:
+            db.execute("ALTER TABLE action_runs ADD COLUMN camera TEXT DEFAULT ''")
         if not db.query("SELECT v FROM action_meta WHERE k='seeded'"):
             if not db.query("SELECT code FROM actions LIMIT 1"):
                 for s in SEEDS:
@@ -116,14 +118,15 @@ class ActionStore:
         self.db.execute("DELETE FROM actions WHERE code=?", (int(code),))
         return True
 
-    def log(self, a: Action, actor: str, source: str, ok: bool, detail: str, image: str = "") -> int:
-        return self.db.execute("INSERT INTO action_runs(ts, code, name, actor, source, ok, detail, image) VALUES(?,?,?,?,?,?,?,?)",
-                               (time.time(), a.code, a.name, actor, source, int(ok), detail[:300], image))
+    def log(self, a: Action, actor: str, source: str, ok: bool, detail: str, image: str = "", camera: str = "") -> int:
+        return self.db.execute("INSERT INTO action_runs(ts, code, name, actor, source, ok, detail, image, camera) "
+                               "VALUES(?,?,?,?,?,?,?,?,?)",
+                               (time.time(), a.code, a.name, actor, source, int(ok), detail[:300], image, camera))
 
     def runs(self, limit: int = 30, code: int | None = None) -> list[dict[str, Any]]:
         where, params = ("WHERE code=?", [int(code)]) if code is not None else ("", [])
         rows = self.db.query(f"SELECT * FROM action_runs {where} ORDER BY id DESC LIMIT ?", [*params, int(limit)])
-        return [{**r, "ok": bool(r["ok"]), "time": fmt_ts(r["ts"])} for r in rows]
+        return [{**r, "ok": bool(r["ok"]), "time": fmt_ts(r["ts"]), "camera": r.get("camera") or ""} for r in rows]
 
     def last_runs(self) -> dict[int, dict[str, Any]]:
         rows = self.db.query("SELECT r.* FROM action_runs r JOIN (SELECT code, MAX(id) AS id FROM action_runs GROUP BY code) m "
@@ -159,6 +162,9 @@ class ActionService:
         self.shots_dir = shots_dir
         self._speak, self._notify, self._snapshot = speak, notify, snapshot
         self.station_name, self._problem, self._http = station_name, problem, http
+        # 由应用设置（多路摄像头）：摄像头编号 → {"id", "name", "label", "station"}；名称 → 摄像头
+        self.camera_info: Callable[[str], dict[str, Any]] = lambda cam: {"id": cam, "name": "", "label": "", "station": ""}
+        self.resolve_camera: Callable[[str], Any] = lambda key: None
         self._pending: dict[tuple[str, int], tuple[float, int]] = {}    # (会话, 编号) → (时间, 提出确认时的对话轮次)
         from vva.actions.tools import ActionTools
         self.tools = ActionTools(self, bus)
@@ -237,22 +243,27 @@ class ActionService:
         self._pending[key] = (now, turn_no)
         return True
 
-    async def run(self, code: Any, *, actor: str = "值班员", source: str = "web", text: str = "") -> dict[str, Any]:
+    async def run(self, code: Any, *, actor: str = "值班员", source: str = "web", text: str = "",
+                  camera: str = "") -> dict[str, Any]:
+        """camera：作用于哪一路摄像头（抓拍取那一路的画面，设备接口会收到摄像头编号）。"""
         a = self.find(code)
         if a is None:
             return {"ok": False, "error": f"没有 {code} 号动作"}
         problem = self.problem(a)
         if problem:
-            self.store.log(a, actor, source, False, problem)
+            self.store.log(a, actor, source, False, problem, camera=camera)
             return {"ok": False, "code": a.code, "name": a.name, "error": f"{a.code} 号“{a.name}”现在执行不了：{problem}"}
         image = ""
         try:
-            detail, image = await self._execute(a, text.strip())
+            detail, image = await self._execute(a, text.strip(), camera)
             ok = True
         except Exception as e:
             log.warning("执行 %s 号 %s 失败：%s", a.code, a.name, e)
             detail, ok = str(e) or "执行失败", False
-        run_id = self.store.log(a, actor, source, ok, detail, image)
+        info = self.camera_info(camera) if camera else {}
+        if info.get("label"):
+            detail = f"{detail}（{info['label']}）"
+        run_id = self.store.log(a, actor, source, ok, detail, image, camera)
         log.info("执行 %s 号 %s（%s，%s）：%s", a.code, a.name, actor, source, detail)
         self.bus.publish(TOPIC_UI, {"type": "action", "code": a.code, "name": a.name, "ok": ok, "detail": detail,
                                     "actor": actor, "session": "web"})
@@ -261,7 +272,7 @@ class ActionService:
             out["error"] = detail
         return out
 
-    async def _execute(self, a: Action, text: str) -> tuple[str, str]:
+    async def _execute(self, a: Action, text: str, camera: str = "") -> tuple[str, str]:
         cfg = a.config
         say = text or str(cfg.get("text") or "")
         if a.kind == "speaker":
@@ -276,16 +287,23 @@ class ActionService:
             sent = await self._notify(f"{station + ' · ' if station else ''}春雷问鉴通知", say)
             return f"已发到 {'、'.join(sent)}", ""
         if a.kind == "snapshot":
-            jpeg = self._snapshot() if self._snapshot else None
+            jpeg = None
+            if self._snapshot:
+                try:
+                    jpeg = self._snapshot(camera=camera) if camera else self._snapshot()
+                except TypeError:
+                    jpeg = self._snapshot()
             if not jpeg:
                 raise RuntimeError("现在没有画面")
             os.makedirs(self.shots_dir, exist_ok=True)
-            name = time.strftime("%Y%m%d-%H%M%S") + f"-{a.code}.jpg"
+            name = time.strftime("%Y%m%d-%H%M%S") + f"-{a.code}" + (f"-{camera}" if camera else "") + ".jpg"
             with open(os.path.join(self.shots_dir, name), "wb") as f:
                 f.write(jpeg)
             return "已保存当前画面", name
         if a.kind == "webhook":
-            payload = {"code": a.code, "name": a.name, "text": text, "station": self.station_name(), "ts": int(time.time()),
+            info = self.camera_info(camera) if camera else {}
+            payload = {"code": a.code, "name": a.name, "text": text, "station": info.get("station") or self.station_name(),
+                       "camera": camera, "camera_name": info.get("name", ""), "ts": int(time.time()),
                        **(cfg.get("body") if isinstance(cfg.get("body"), dict) else {})}
             headers = {str(k): str(v) for k, v in (cfg.get("headers") or {}).items()}
             method = str(cfg.get("method") or "POST").upper()

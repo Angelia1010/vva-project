@@ -60,6 +60,7 @@ class MemoryEvent:
     details: dict[str, Any] = field(default_factory=dict)
     frame: str | None = None          # 关键帧相对路径（相对于记忆目录）
     id: int | None = None
+    camera: str = ""                  # 摄像头编号（操作员指令等不属于某一路的为空）
 
 
 @dataclass
@@ -85,6 +86,10 @@ class MemoryStore:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(_SCHEMA)
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(events)").fetchall()}
+            if "camera" not in cols:          # 旧库升级：加摄像头列，老记录算第一路（空）
+                self._db.execute("ALTER TABLE events ADD COLUMN camera TEXT DEFAULT ''")
+            self._db.execute("CREATE INDEX IF NOT EXISTS idx_events_camera ON events(camera, ts)")
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.commit()
 
@@ -105,18 +110,23 @@ class MemoryStore:
     # ---------------------------------------------------------------- events
     def add_event(self, ev: MemoryEvent) -> int:
         cur = self._exec(
-            "INSERT INTO events(ts, kind, summary, people, details, frame) VALUES (?,?,?,?,?,?)",
-            (ev.ts, ev.kind, ev.summary, ev.people, json.dumps(ev.details, ensure_ascii=False), ev.frame))
+            "INSERT INTO events(ts, kind, summary, people, details, frame, camera) VALUES (?,?,?,?,?,?,?)",
+            (ev.ts, ev.kind, ev.summary, ev.people, json.dumps(ev.details, ensure_ascii=False), ev.frame, ev.camera or ""))
         return int(cur.lastrowid)
 
     @staticmethod
     def _row_to_event(r: sqlite3.Row) -> MemoryEvent:
         return MemoryEvent(ts=r["ts"], kind=r["kind"], summary=r["summary"], people=r["people"],
-                           details=json.loads(r["details"] or "{}"), frame=r["frame"], id=r["id"])
+                           details=json.loads(r["details"] or "{}"), frame=r["frame"], id=r["id"],
+                           camera=(r["camera"] if "camera" in r.keys() else "") or "")
 
     def events_between(self, start: float, end: float, kinds: list[str] | None = None,
-                       keyword: str | None = None) -> list[MemoryEvent]:
+                       keyword: str | None = None, camera: str | None = None) -> list[MemoryEvent]:
+        """camera：只要这一路的画面记录和提醒（操作员指令不分摄像头，照样带上）。"""
         sql, args = "SELECT * FROM events WHERE ts >= ? AND ts <= ?", [start, end]
+        if camera:
+            sql += " AND (camera = ? OR kind = ?)"
+            args += [camera, KIND_COMMAND]
         if kinds:
             sql += f" AND kind IN ({','.join('?' * len(kinds))})"
             args += kinds
@@ -125,11 +135,12 @@ class MemoryStore:
             args += [f"%{keyword}%", f"%{keyword}%"]
         return [self._row_to_event(r) for r in self._query(sql + " ORDER BY ts", tuple(args))]
 
-    def nearest_frame(self, ts: float, max_gap: float) -> MemoryEvent | None:
+    def nearest_frame(self, ts: float, max_gap: float, camera: str | None = None) -> MemoryEvent | None:
         """离 ts 最近、且保存了关键帧的画面记录；相差超过 max_gap 秒则返回 None。"""
+        cam_sql, args = (" AND camera = ?", (camera,)) if camera else ("", ())
         rows = self._query(
-            "SELECT * FROM events WHERE frame IS NOT NULL AND ts BETWEEN ? AND ? "
-            "ORDER BY ABS(ts - ?) LIMIT 1", (ts - max_gap, ts + max_gap, ts))
+            "SELECT * FROM events WHERE frame IS NOT NULL AND ts BETWEEN ? AND ?" + cam_sql +
+            " ORDER BY ABS(ts - ?) LIMIT 1", (ts - max_gap, ts + max_gap, *args, ts))
         return self._row_to_event(rows[0]) if rows else None
 
     def time_range(self) -> tuple[float, float] | None:
