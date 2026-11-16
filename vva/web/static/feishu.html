@@ -63,6 +63,8 @@
   details.steps code { background: #15243A; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 
   @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .side { position: static; } .row2 { grid-template-columns: 1fr; } }
+  .crumb { display: inline-block; margin-bottom: 6px; font-size: 13px; color: #7FD8F7; text-decoration: none; }
+  .crumb:hover { text-decoration: underline; }
 </style>
 </head>
 <body class="app">
@@ -84,6 +86,7 @@
 <div class="page">
   <div class="page-head">
     <div>
+      <a class="crumb" href="/settings">‹ 返回设置（岗位与摄像头）</a>
       <h1>飞书</h1>
       <p>接入后可以在飞书里私聊机器人或在群里 @它 提问、下指令，告警和定时报告会推送到指定的群。使用长连接接收消息，服务器不需要公网 IP。</p>
     </div>
