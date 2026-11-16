@@ -49,6 +49,8 @@ DEFAULTS: dict[str, Any] = {
                 "json_mode": False, "max_tokens": 1024, "extra_body": None},
         "asr": {"base_url": "", "api_key": "", "model": "", "language": "zh",
                 "prompt": "", "timeout": 30, "extra_body": None},
+        "embedding": {"base_url": "", "api_key": "", "model": "", "timeout": 30, "batch_size": 32,
+                      "extra_body": None},      # 可选：知识库向量检索；不填 model 则只用关键词检索
         "tts": {"base_url": "", "api_key": "", "model": "", "voice": "alloy",
                 "response_format": "pcm", "sample_rate": 24000, "speed": None,
                 "stream": True, "stream_format": "audio", "language": "",
@@ -91,6 +93,14 @@ DEFAULTS: dict[str, Any] = {
         "dir": "scenes/default",     # 场景包目录（相对于启动目录），可在网页 /scene 页面管理
         "max_ref_images": 3,         # 每个目标最多带几张参考图
         "max_objects_per_call": 2,   # 一次判断最多涉及几个目标（8B 模型一次最多 8 张图）
+    },
+    "knowledge": {
+        "enabled": True,
+        "dir": "data/knowledge",     # 文档与索引目录；在网页 /knowledge 页面上传
+        "chunk_chars": 400,          # 切分后每段的最大字数
+        "top_k": 4,                  # 每次检索取几段
+        "max_answer_chars": 150,     # 子智能体结论的最大字数（主智能体会再压缩成一句话）
+        "max_file_mb": 50,
     },
     "memory": {
         "enabled": True,
@@ -160,7 +170,7 @@ def load_config(path: str | None) -> dict[str, Any]:
     cfg = _expand_env(cfg)
     # 未单独配置的模型，沿用 vlm 的地址和 Key，减少重复填写
     vlm = cfg["models"]["vlm"]
-    for name in ("agent_llm", "asr", "tts"):
+    for name in ("agent_llm", "asr", "tts", "embedding"):
         m = cfg["models"][name]
         if not m.get("base_url"):
             m["base_url"] = vlm.get("base_url", "")

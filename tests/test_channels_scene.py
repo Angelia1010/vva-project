@@ -89,6 +89,7 @@ def _app(tmp_path, llm, vlm=None, **cfg_over):
     cfg["observer"]["enabled"] = False
     cfg["memory"]["dir"] = str(tmp_path / "memory")
     cfg["scene"]["dir"] = str(tmp_path / "scene")
+    cfg["knowledge"]["dir"] = str(tmp_path / "knowledge")
     for k, v in cfg_over.items():
         cfg[k].update(v)
     app = App(cfg, llm=llm, vlm=vlm or FakeVLM(default="依据：x\n结论：画面中有 2 人\n把握：高"), enable_audio=False)

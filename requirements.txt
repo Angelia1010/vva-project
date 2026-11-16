@@ -4,6 +4,7 @@ uvicorn[standard]>=0.29
 opencv-python-headless>=4.8   # 服务器无图形界面，用 headless 版，免装 libGL
 numpy>=1.24
 pyyaml>=6.0
+pypdf>=4.0                 # 知识库解析 PDF
 webrtcvad-wheels>=2.0.10   # 人声检测，挡住敲键盘等噪声；装不上时自动退回能量+频谱检测
 # 以下按需安装：
 # lark-oapi>=1.4,<2   # 接入飞书时需要（channels.feishu），语音消息还需系统安装 ffmpeg

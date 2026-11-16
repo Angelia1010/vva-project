@@ -76,11 +76,19 @@ class App:
                        "scene_hint": cfg["agent"].get("scene_hint", ""), **cfg["memory"]}
             self.memory = LongTermMemory(mem_cfg, self.bus, self.llm, self.vlm)
             self.memory.attach_rules(self.rules)
+        # 领域知识库子智能体（可关闭）
+        self.knowledge = None
+        if cfg["knowledge"].get("enabled", True):
+            from vva.knowledge import KnowledgeBase
+            embedder = clients.EmbeddingModel(m["embedding"]) if m["embedding"].get("model") else None
+            self.knowledge = KnowledgeBase(cfg["knowledge"], self.llm, embedder, self.bus)
+
         if self.scene:
             self.scene.apply_rules(self.rules)
             self.scene.on_change(lambda: self.scene.apply_rules(self.rules))   # 网页上新增的规则模板立即生效
         self.tools = ToolSet(vision_tools, self.memory.tools if self.memory else None,
-                             self.scene.tools(self.buffer, self.vlm, self.bus, **cfg["agent"]) if self.scene else None)
+                             self.scene.tools(self.buffer, self.vlm, self.bus, **cfg["agent"]) if self.scene else None,
+                             self.knowledge.tools if self.knowledge else None)
         self.agent = Agent(self.llm, self.tools, **cfg["agent"],
                            notes_provider=self.memory.tools.note_lines if self.memory else None)
         if self.scene:
@@ -138,6 +146,8 @@ class App:
         self._tasks.append(asyncio.create_task(self._alert_loop(), name="alerts"))
         if self.memory:
             self._tasks += [asyncio.create_task(c) for c in self.memory.background_tasks()]
+        if self.knowledge:
+            self._tasks += [asyncio.create_task(c) for c in self.knowledge.background_tasks()]
         if self.voice:
             try:
                 await self.voice.start()
@@ -162,6 +172,8 @@ class App:
         self.video.stop()
         if self.memory:
             await self.memory.close()
+        if self.knowledge:
+            await self.knowledge.close()
 
     # ---------------------------------------------------------------- 对话
     @property
@@ -306,6 +318,7 @@ class App:
             "observer": self.observer is not None,
             "timeline_entries": len(self.timeline),
             "memory": self.memory.stats() if self.memory else None,
+            "knowledge": self.knowledge.stats() if self.knowledge else None,
             "voice_mode": self.voice.mode if self.voice else None,
             "rules": [r.to_dict() for r in self.rules.list()],
         }

@@ -328,3 +328,47 @@ journalctl -u vva-app -n 50 --no-pager | grep -i 飞书
 | 机器人收不到消息 | 检查应用是否已发布、订阅方式是否为长连接、是否添加了 im.message.receive_v1 事件 |
 | 回复失败 `230002` | 机器人不在这个群里，把它拉进群 |
 | 语音消息没反应 | 安装 ffmpeg；确认配置了 `models.asr` |
+
+## 11. 领域知识库（可选）
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+source .venv/bin/activate
+uv pip install -r requirements.txt     # 新增 pypdf，用于解析 PDF
+sudo systemctl restart vva-app
+```
+
+打开 `https://<服务器IP>:9000/knowledge`，上传规章制度、操作规程、设备手册等（txt / md / pdf / docx）。
+状态变成“可用”后，可以在页面下方直接测试，例如问“压力表读数多少算异常”，现场情况填“读数 0.62MPa”。
+之后在测试页或飞书里问“表上读数正常吗”，监控助手会先看画面，再查知识库给出判断和依据。
+
+- 扫描版 PDF 没有文字层，需要先做文字识别（OCR）再上传。
+- 数据在项目目录下的 `data/knowledge/`，删除这个目录即可清空知识库。
+
+### 11.1 可选：部署向量模型，提高语义检索效果
+
+不部署也能用：默认按关键词检索，对设备名、型号、数值类问题效果不错。问法和资料措辞差别很大时（如问“晚上能进去吗”，
+资料写“22:00 至次日 7:00 禁止进入”），向量检索更容易找到。
+
+GPU1 上已经有语音识别和语音合成，先用 `nvidia-smi` 确认 GPU1 还剩 3G 以上显存，再部署一个小向量模型
+（下面以 Qwen3-Embedding-0.6B 为例，端口 8004）：
+
+```bash
+cd /data7/Vision-Voice-Agent
+source venvs/vllm/bin/activate
+modelscope download --model Qwen/Qwen3-Embedding-0.6B --local_dir models/Qwen3-Embedding-0.6B
+CUDA_VISIBLE_DEVICES=1 vllm serve models/Qwen3-Embedding-0.6B --served-model-name qwen3-embedding \
+  --host 127.0.0.1 --port 8004 --runner pooling --gpu-memory-utilization 0.1 --max-model-len 2048
+```
+
+不同 vLLM 版本的参数名不同：如果提示不认识 `--runner`，改成 `--task embed`。确认能启动后，参照第 8 节的方式写一个
+`vva-embed.service` 开机自启。然后在 `config.yaml` 的 `models:` 下加上：
+
+```yaml
+  embedding:
+    base_url: "http://127.0.0.1:8004/v1"
+    api_key: "EMPTY"
+    model: "qwen3-embedding"
+```
+
+重启 `vva-app` 后，已上传的文档会在后台自动补算向量，知识库页面顶部会显示“关键词 + 向量检索”。

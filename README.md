@@ -30,12 +30,17 @@ vva/
   scene/       场景包 ── store.py    目录读写（scene.yaml + 目标参考图）
                context.py  提示词、目标匹配、参考图、语音热词
                tools.py    compare_with_reference 工具
+  knowledge/   领域知识库子智能体 ── parsing.py 文档解析与切分（txt/md/pdf/docx）
+               store.py     SQLite 存储
+               retriever.py 关键词（BM25）+ 可选向量检索，排名融合
+               agent.py     子智能体：检索 → 阅读片段 → 带出处的结论
+               tools.py     主智能体调用的 ask_knowledge 工具
   channels/    接入入口（与核心解耦，只依赖 base.py 的 ChannelHost 接口）
                base.py     入口接口
                feishu/     飞书：长连接收消息、问答/指令/语音、告警卡片、定时报告、权限
   voice/       语音会话（断句→识别→过滤→播报、打断、唤醒词、按住说话）
   app.py       编排：把以上模块组装起来
-  web/         网页服务与测试页面（/browser 测试页、/scene 场景包管理页）
+  web/         网页服务与测试页面（/browser 测试页、/scene 场景包管理、/knowledge 知识库管理）
 scenes/        场景包（example/ 为示例；实际使用 scenes/default/，不纳入 git）
 examples/      自定义摄像头引擎、跨进程推帧/推音频示例
 tests/         用假模型跑通全流程的测试
@@ -184,6 +189,16 @@ video:
 - **热词**：连同目标名称一起交给语音识别，提高专业术语识别率
 
 适合外观有特点的专用设备、指示灯、工服工牌、特定标识；不适合区分外观相近的型号、精确计数，也不用于识别具体是哪个人。
+
+### 领域知识库子智能体（`knowledge`）
+
+在网页 `/knowledge` 上传规章制度、操作规程、设备手册、巡检标准（txt / md / pdf / docx），后台自动解析、切分、建索引。
+主智能体遇到“是否正常、规定是什么、怎么处理”的问题时，调用 `ask_knowledge(question, context)`：
+需要结合画面的，先看画面，把看到的情况放进 `context`。子智能体自己检索、阅读资料片段，只返回一句带出处的结论，
+大段资料不进入主智能体的上下文。资料里没有的，明确回答“知识库中没有相关规定”，不会编造。
+
+检索默认用关键词（BM25，中文按字二元组，无需分词库）；配置了 `models.embedding` 后叠加向量检索，两路结果按排名融合。
+向量服务不可用时自动退回关键词检索；之后配置或恢复向量服务，重启时会给旧文档补算向量。
 
 ### 接入入口（`channels`）
 

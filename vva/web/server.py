@@ -48,6 +48,9 @@ def create_web_app(app: App) -> FastAPI:
             raise HTTPException(status_code=401, detail="ingest token 错误")
 
     # ------------------------------------------------------------ 页面与画面
+    from fastapi.staticfiles import StaticFiles
+    api.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")   # 页面共用的样式和脚本
+
     @api.get("/")
     async def index() -> FileResponse:
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -219,5 +222,10 @@ def create_web_app(app: App) -> FastAPI:
     if app.scene:
         from vva.web.scene_api import register_scene_routes
         register_scene_routes(api, app.scene, app.snapshot, web_cfg.get("admin_token") or "", STATIC_DIR)
+
+    # ------------------------------------------------------------ 知识库管理
+    if app.knowledge:
+        from vva.web.knowledge_api import register_knowledge_routes
+        register_knowledge_routes(api, app.knowledge, web_cfg.get("admin_token") or "", STATIC_DIR)
 
     return api

@@ -69,6 +69,10 @@ voice:
 # asr / tts / agent_llm 未填写 base_url、api_key 时自动沿用 vlm 的配置；
 # agent_llm 未填写 model 时沿用 vlm 的 model（用同一个多模态模型当大脑）。
 models:
+  # 可选：知识库向量检索（OpenAI 兼容 /v1/embeddings）。不填 model 则只用关键词检索
+  # embedding:
+  #   base_url: "http://127.0.0.1:8004/v1"
+  #   model: "qwen3-embedding"
   vlm:
     base_url: "http://127.0.0.1:8001/v1"
     api_key: "${VLM_API_KEY:-EMPTY}"
@@ -130,6 +134,14 @@ scene:
   enabled: true
   dir: scenes/default
   max_ref_images: 3
+
+# ---------------------------------------------------------------- 领域知识库
+# 在网页 /knowledge 上传文档；数据在 dir 目录
+knowledge:
+  enabled: true
+  dir: data/knowledge
+  top_k: 4                  # 每次检索取几段
+  max_answer_chars: 150     # 子智能体结论的最大字数
 
 # ---------------------------------------------------------------- 接入入口
 # 飞书配置步骤见 DEPLOY_LINUX.md 第 10 节
