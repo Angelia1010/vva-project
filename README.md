@@ -8,7 +8,7 @@
 所有模型都通过 **OpenAI 兼容接口**调用，模型由你自行部署后接入。
 
 产品需求见 [docs/PRD-AI值守员.md](docs/PRD-AI值守员.md)，架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，
-各分支的功能和状态见 [docs/BRANCHES.md](docs/BRANCHES.md)。
+各分支的功能和状态见 [docs/BRANCHES.md](docs/BRANCHES.md)，模型压测记录见 [docs/BENCHMARK.md](docs/BENCHMARK.md)。
 
 ## 目录结构
 
