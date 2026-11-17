@@ -27,7 +27,7 @@ from vva.core import turn  # noqa: E402
 from vva.core.bus import TOPIC_ALERT, TOPIC_UI, EventBus  # noqa: E402
 from vva.core.config import load_config  # noqa: E402
 from vva.core.types import Frame  # noqa: E402
-from vva.perception.timeline import Timeline, WatchRules  # noqa: E402
+from vva.perception.timeline import Timeline  # noqa: E402
 from vva.video.frame_buffer import FrameBuffer  # noqa: E402
 
 
@@ -45,10 +45,14 @@ def _drain(q):
 # ---------------------------------------------------------------- 多会话
 def test_conversations_are_isolated_and_readonly_hides_write_tools():
     async def run():
+        from tests.fakes import make_duties
+        from vva.agent.toolkit import ToolSet
         buf = FrameBuffer()
         buf.add(Frame(image=_img(), ts=time.time()))
-        tools = VisionTools(buf, FakeVLM(), Timeline(), WatchRules(), EventBus())
-        llm = FakeLLM([[("look_now", {"question": "几个人"})], "两人。", [("add_watch", {"condition": "x"})], "好。"])
+        bus = EventBus()
+        duties = make_duties(bus, buf)
+        tools = ToolSet(VisionTools(buf, FakeVLM(), Timeline(), duties.book, bus), duties.tools)
+        llm = FakeLLM([[("look_now", {"question": "几个人"})], "两人。", [("add_task", {"condition": "x"})], "好。"])
         agent = Agent(llm, tools)
         store = ConversationStore(max_turns=8)
         a, b = store.get("feishu:a"), store.get("feishu:b", readonly=True)
@@ -56,10 +60,10 @@ def test_conversations_are_isolated_and_readonly_hides_write_tools():
         assert [m["role"] for m in a.messages][0] == "user" and b.messages == []
         await agent.run("有人就提醒我", lambda _: None, conversation=b)
         names = {s["function"]["name"] for s in agent._schemas(b)}
-        assert "add_watch" not in names and "look_now" in names
+        assert "add_task" not in names and "look_now" in names and "list_duties" in names
         tool_msg = next(m for m in b.messages if m["role"] == "tool")
         assert "没有修改权限" in tool_msg["content"]            # 模型硬调也会被拦下
-        assert tools.rules.list() == []
+        assert duties.book.list() == []
     asyncio.run(run())
 
 

@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
 from abc import abstractmethod
 from collections import OrderedDict
@@ -61,6 +63,8 @@ class ChatChannel(Channel):
         self._conn = self._conn_key(cfg)
         self._seen: OrderedDict[str, None] = OrderedDict()                 # 去重：平台可能重复推送同一条消息
         self.recent: OrderedDict[str, dict[str, Any]] = OrderedDict()      # 最近发来消息的会话，供配置页一键选用
+        self._recent_file = str(cfg.get("_recent_file") or "")             # 保存到文件，重启后职责里仍能选到这些群
+        self._load_recent()
         self._alert_task: asyncio.Task | None = None
         self._report_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -150,13 +154,10 @@ class ChatChannel(Channel):
                  len(self.report_chats), self.report_times or "无")
 
     def _sync_tasks(self) -> None:
-        """按当前配置启停告警推送、定时报告两个后台任务。"""
-        if self.alert_chats and self._alert_task is None:
+        """启动告警推送（一直运行：职责可能指定发到本入口的某个群），按配置启停入口自带的定时报告。"""
+        if self._alert_task is None:
             q = self.host.bus.subscribe(TOPIC_ALERT)     # 先订阅再启动任务，启动后立即发生的告警也不会漏
             self._alert_task = asyncio.create_task(self._alert_loop(q), name=f"{self.name}-alerts")
-        elif not self.alert_chats and self._alert_task is not None:
-            self._alert_task.cancel()
-            self._alert_task = None
         if self.report_chats and self.report_times and self._report_task is None:
             self._report_task = asyncio.create_task(self._report_loop(), name=f"{self.name}-reports")
         elif not (self.report_chats and self.report_times) and self._report_task is not None:
@@ -181,7 +182,8 @@ class ChatChannel(Channel):
         last = getattr(rec, "last_event", 0.0)
         return {"started": self.started, "receiver": state, "error": error,
                 "last_message": time.strftime("%m-%d %H:%M:%S", time.localtime(last)) if last else "",
-                "alert_push": self._alert_task is not None, "report": self._report_task is not None,
+                "alert_push": bool(self.alert_chats) and self._alert_task is not None,
+                "report": self._report_task is not None,
                 "recent": list(reversed(self.recent.values()))}
 
     # ---------------------------------------------------------------- 接收消息
@@ -218,6 +220,30 @@ class ChatChannel(Channel):
                                   "text": (m.text or f"[{m.msg_type}]")[:40], "time": time.strftime("%m-%d %H:%M")}
         while len(self.recent) > 20:
             self.recent.popitem(last=False)
+        self._save_recent()
+
+    def _load_recent(self) -> None:
+        if not self._recent_file:
+            return
+        try:
+            with open(self._recent_file, encoding="utf-8") as f:
+                for r in json.load(f):
+                    if isinstance(r, dict) and r.get("chat_id"):
+                        self.recent[r["chat_id"]] = r
+        except (OSError, ValueError):
+            pass
+
+    def _save_recent(self) -> None:
+        if not self._recent_file:
+            return
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self._recent_file)), exist_ok=True)
+            tmp = self._recent_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(list(self.recent.values()), f, ensure_ascii=False)
+            os.replace(tmp, self._recent_file)
+        except OSError as e:
+            log.warning("保存最近会话失败：%s", e)
 
     async def handle_event(self, raw: dict[str, Any]) -> None:
         m = self.parse(raw)
@@ -291,20 +317,65 @@ class ChatChannel(Channel):
     async def _alert_loop(self, q: asyncio.Queue) -> None:
         try:
             while True:
-                await self.push_alert(await q.get())
+                msg = await q.get()
+                try:
+                    if msg.get("kind") == "report":
+                        await self.push_report(msg)
+                    else:
+                        await self.push_alert(msg)
+                except Exception:
+                    log.exception("%s推送失败", self.label)
         finally:
             self.host.bus.unsubscribe(TOPIC_ALERT, q)
 
+    def chats_for(self, msg: dict[str, Any], default: list[str]) -> list[str]:
+        """这条消息要发到本入口的哪些群：
+        没有 targets（旧版提醒）→ 默认群；targets 里有 "default" 或本入口名 → 默认群；"<入口名>:<群>" → 指定的群。"""
+        targets = msg.get("targets")
+        if targets is None:
+            return list(default)
+        chats: list[str] = []
+        for t in targets:
+            if t in ("default", self.name):
+                chats += default
+            elif t.startswith(self.name + ":"):
+                chats.append(t.split(":", 1)[1])
+        return list(dict.fromkeys(c for c in chats if c))
+
+    def _report_result(self, msg: dict[str, Any], chat: str, ok: bool, error: str = "") -> None:
+        fn = getattr(self.host, "notify_result", None)
+        if fn and msg.get("alert_id"):
+            fn(msg["alert_id"], f"{self.label}·{chat[:12]}", ok, error)
+
     async def push_alert(self, alert: dict[str, Any]) -> None:
+        chats = self.chats_for(alert, self.alert_chats)
+        if not chats:
+            return
         condition, evidence = alert.get("condition", ""), alert.get("evidence", "")
+        if alert.get("station"):
+            condition = f"{condition}（{alert['station']}）"
         time_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(alert.get("ts") or time.time())))
-        image = await self._image(self.host.snapshot())
-        for chat in self.alert_chats:
+        jpeg = None
+        if alert.get("image") and hasattr(self.host, "alert_image"):     # 优先用复核时保存的画面
+            jpeg = self.host.alert_image(alert["image"])
+        image = await self._image(jpeg or self.host.snapshot())
+        for chat in chats:
             try:
                 await self.send_alert(chat, condition, evidence, time_text, image)
                 self.host.add_note(f"{self.name}:{chat}", f"[{time_text}] 提醒：{condition}。{evidence}")
+                self._report_result(alert, chat, True)
+                log.info("已推送%s告警到 %s：%s", self.label, chat, condition)
             except Exception as e:
                 log.warning("推送%s告警到 %s 失败：%s", self.label, chat, e)
+                self._report_result(alert, chat, False, str(e))
+
+    async def push_report(self, msg: dict[str, Any]) -> None:
+        """汇报类职责生成的报告。"""
+        for chat in self.chats_for(msg, self.report_chats):
+            try:
+                await self.send_report_to(chat, msg.get("title") or "监控报告", msg.get("text") or "")
+            except Exception as e:
+                log.warning("发送%s报告到 %s 失败：%s", self.label, chat, e)
 
     # ---------------------------------------------------------------- 定时报告
     def due_report(self, now: float) -> bool:

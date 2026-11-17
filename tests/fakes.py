@@ -103,3 +103,19 @@ def syllables_pcm(n: int, sr: int = 16000, syl_ms: int = 150, gap_ms: int = 60) 
     for i in range(n):
         out += voice_pcm(syl_ms / 1000, sr, f0=140 + 15 * (i % 4)) + gap
     return out
+
+
+def make_duties(bus=None, buffer=None, vlm=None, llm=None, db_path=":memory:"):
+    """测试用的职责模块（内存数据库，报告固定返回一句话）。"""
+    import tempfile
+
+    from vva.core.bus import EventBus
+    from vva.core.sqlite import SqliteDB
+    from vva.duties import DutyManager
+    from vva.video.frame_buffer import FrameBuffer
+
+    async def report(start, end):
+        return "今天共 2 次提醒。"
+    cfg = {"alerts_dir": tempfile.mkdtemp(), "verify_delay": 0}
+    return DutyManager(cfg, SqliteDB(db_path), bus or EventBus(), buffer or FrameBuffer(), vlm or FakeVLM(),
+                       llm or FakeLLM([]), report=report)

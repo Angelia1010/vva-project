@@ -18,11 +18,16 @@ class Attachment:
 
 _session: ContextVar[str | None] = ContextVar("vva_session", default=None)
 _attachments: ContextVar[list[Attachment] | None] = ContextVar("vva_attachments", default=None)
+_turn: ContextVar[int] = ContextVar("vva_turn", default=0)
+_seq = 0
 
 
 def begin(session_id: str) -> list[Attachment]:
     """在一轮对话的任务开始时调用，返回本轮的附件列表。"""
+    global _seq
+    _seq += 1
     items: list[Attachment] = []
+    _turn.set(_seq)
     _session.set(session_id)
     _attachments.set(items)
     return items
@@ -30,6 +35,11 @@ def begin(session_id: str) -> list[Attachment]:
 
 def current_session() -> str | None:
     return _session.get()
+
+
+def current_turn() -> int:
+    """本轮对话的序号（进程内递增）；不在对话回合内为 0。用来区分“同一轮”和“下一轮”。"""
+    return _turn.get()
 
 
 def attach(jpeg: bytes, caption: str = "") -> None:

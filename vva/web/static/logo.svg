@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>春雷问鉴</title>
+  <defs>
+    <linearGradient id="cl-g" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4FD2FF"/><stop offset=".5" stop-color="#39BDF0"/><stop offset="1" stop-color="#5FE3A0"/>
+    </linearGradient>
+    <mask id="cl-m">
+      <rect width="64" height="64" fill="#fff"/>
+      <path d="M36.5 1 L20.5 31 H30 L25.5 63 L44.5 27 H34.5 L41 1 Z" fill="#000" stroke="#000" stroke-width="6" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <!-- 鉴：铜镜 / 镜头，外环 + 内环 + 镜钮 -->
+  <g mask="url(#cl-m)" fill="none" stroke="url(#cl-g)">
+    <circle cx="32" cy="32" r="24" stroke-width="5"/>
+    <circle cx="32" cy="32" r="14.5" stroke-width="2.2" opacity=".55"/>
+  </g>
+  <!-- 春雷：一道闪电劈开镜面 -->
+  <path d="M36.5 3 L21.5 31 H30.5 L26.5 61 L43.5 28 H34 L40.5 3 Z" fill="url(#cl-g)" stroke="url(#cl-g)" stroke-width="1.2" stroke-linejoin="round"/>
+</svg>

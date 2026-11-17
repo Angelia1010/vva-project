@@ -154,13 +154,9 @@ def test_agent_tool_loop():
     asyncio.run(run())
 
 
-def test_watch_tools_and_history_trim():
+def test_unknown_tool_and_history_trim():
     async def run():
         tools, _ = _tools(FakeVLM())
-        r = json.loads(await tools.call("add_watch", {"condition": "画面中没有人"}))
-        assert r["ok"] and r["rule"]["id"] == "r1"
-        assert json.loads(await tools.call("list_watches", {}))["rules"][0]["condition"] == "画面中没有人"
-        assert json.loads(await tools.call("remove_watch", {"rule_id": "r1"}))["ok"]
         assert "error" in json.loads(await tools.call("no_such_tool", {}))
         agent = Agent(FakeLLM(["好"] * 20), tools, max_history_turns=3)
         for i in range(6):

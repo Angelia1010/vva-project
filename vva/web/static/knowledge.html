@@ -2,15 +2,16 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>知识库 - 监控值守台</title>
+<title>知识库 - 春雷问鉴</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); gap: 20px; align-items: start; }
 
   /* 上传区：页面上最显眼的操作 */
   .drop { display: flex; align-items: center; gap: 18px; padding: 22px 24px; margin-bottom: 16px; cursor: pointer;
-          border: 2px dashed #9aa7b3; border-radius: 6px; background: var(--panel); }
+          border: 2px dashed #5B6B82; border-radius: 6px; background: var(--panel); }
   .drop:hover, .drop.over { border-color: var(--steel); background: var(--steel-soft); }
   .drop .glyph { flex: 0 0 auto; width: 46px; height: 56px; border: 2px solid var(--steel); border-radius: 3px; position: relative; }
   .drop .glyph::before, .drop .glyph::after { content: ""; position: absolute; left: 9px; right: 9px; height: 2px; background: var(--steel); }
@@ -19,7 +20,7 @@
   .drop input { display: none; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #e3e8ec; vertical-align: top; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #22344F; vertical-align: top; }
   th { color: var(--ink-2); font-weight: 600; border-bottom-color: var(--rule); white-space: nowrap; }
   td.num { font-family: var(--digits); font-variant-numeric: tabular-nums; white-space: nowrap; }
   td .name { font-weight: 600; word-break: break-all; }
@@ -36,24 +37,26 @@
 
   .tryout { position: sticky; top: 16px; }
   .tryout .actions { display: flex; gap: 8px; margin-top: 10px; }
-  .answer { margin-top: 14px; padding: 12px 14px; background: #fff; border-left: 4px solid var(--steel); white-space: pre-wrap; display: none; }
+  .answer { margin-top: 14px; padding: 12px 14px; background: var(--panel-2); border-left: 4px solid var(--steel); white-space: pre-wrap; display: none; }
   .answer.none { border-left-color: var(--lamp-busy); }
   .answer .src { margin-top: 8px; color: var(--ink-2); font-size: 12px; }
-  .hit { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e3e8ec; font-size: 13px; white-space: pre-wrap; }
-  .hit .where { color: var(--steel); font-weight: 600; display: block; margin-bottom: 2px; }
+  .hit { margin-top: 10px; padding-top: 10px; border-top: 1px solid #22344F; font-size: 13px; white-space: pre-wrap; }
+  .hit .where { color: var(--cyan); font-weight: 600; display: block; margin-bottom: 2px; }
 
   @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .tryout { position: static; } }
 </style>
 </head>
-<body>
+<body class="app">
 <header class="duty">
-  <span class="brand">监控值守台</span>
+  <a class="brand" href="/browser" aria-label="春雷问鉴 首页"><img src="/static/logo.svg" width="28" height="28" alt="">春雷问鉴</a>
   <nav aria-label="页面">
-    <a href="/browser">监控</a>
-    <a href="/skills">技能</a>
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
+    <a href="/actions">执行</a>
+    <a href="/skills">自学习</a>
     <a href="/knowledge" aria-current="page">知识库</a>
-    <a href="/feishu">飞书</a>
-    <a href="/dingtalk">钉钉</a>
+    <a href="/settings">设置</a>
   </nav>
   <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
   <span id="clock" class="clock" aria-label="当前时间"></span>
@@ -63,7 +66,7 @@
   <div class="page-head">
     <div>
       <h1>知识库</h1>
-      <p>上传规章制度、操作规程、设备手册、巡检标准。被问到“是否正常、规定是什么、该怎么处理”时，监控助手会先看画面，再查这里的资料给出判断和出处。</p>
+      <p>上传规章制度、操作规程、设备手册、巡检标准。被问到“是否正常、规定是什么、该怎么处理”时，春雷问鉴会先看画面，再查这里的资料给出判断和出处。</p>
     </div>
     <span class="spacer"></span>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
