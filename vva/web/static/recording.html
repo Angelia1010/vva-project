@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>录像 - 春雷问鉴</title>
+<link rel="stylesheet" href="/static/console.css">
+<style>
+  .stats { display: flex; gap: 26px; align-items: flex-end; flex-wrap: wrap; }
+  .stats div { display: flex; flex-direction: column; align-items: flex-end; }
+  .stats span { font-size: 12px; color: var(--ink-2); }
+  .stats b { font: 600 22px/1.15 var(--digits); font-variant-numeric: tabular-nums; }
+  .stats b.hot { color: var(--alert-soft); }
+  .stats .bar { width: 120px; height: 5px; border-radius: 3px; background: var(--rule); margin-top: 5px; overflow: hidden; }
+  .stats .bar i { display: block; height: 100%; background: var(--cyan); }
+  .stats .bar i.hot { background: var(--lamp-alert); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start; }
+  @media (max-width: 1400px) { .layout { grid-template-columns: minmax(0, 1fr) 380px; } }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .main { min-width: 0; padding: 0; display: flex; flex-direction: column; }
+  body.app .page > .layout > .main { overflow: hidden; }
+  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--rule); }
+  .toolbar h2 { margin: 0; font-size: 15px; }
+  .toolbar input[type=date] { width: 150px; padding: 6px 10px; }
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 16px 14px; }
+
+  .cam { padding: 12px 0; border-bottom: 1px solid #1A2A42; }
+  .cam:last-child { border-bottom: 0; }
+  .cam .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) 80px 120px 60px 120px; gap: 10px; align-items: center; font-size: 13px; }
+  .cam .row .nm { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cam .row .mode { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cam .row .num { font-family: var(--digits); font-variant-numeric: tabular-nums; }
+  .cam .row .st { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cam .row .st.recording { color: #7BE6B1; } .cam .row .st.interrupted, .cam .row .st.error, .cam .row .st.paused { color: #F5D08A; }
+  .cam .row .st.disabled, .cam .row .st.stopped { color: var(--ink-2); }
+  .head-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) 80px 120px 60px 120px; gap: 10px;
+              font-size: 12px; color: var(--ink-2); padding: 10px 0 6px; border-bottom: 1px solid var(--rule); }
+
+  .tl { position: relative; height: 22px; margin-top: 10px; border-radius: 4px; background: #0C1522; border: 1px solid #1E3150; cursor: pointer; }
+  .tl:hover { border-color: #33527D; }
+  .tl .seg { position: absolute; top: 3px; bottom: 3px; background: #2C6E9C; border-radius: 2px; }
+  .tl .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--cyan); }
+  .tl .cursor { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #FFD27A; display: none; }
+  .tl .tip { position: absolute; top: -24px; transform: translateX(-50%); font: 12px var(--digits); background: #0D1828; border: 1px solid var(--line);
+             padding: 1px 6px; border-radius: 4px; white-space: nowrap; display: none; pointer-events: none; }
+  .tl:hover .tip { display: block; }
+  .ticks { display: flex; justify-content: space-between; font: 11px var(--digits); color: #5E7290; margin-top: 3px; }
+
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .player h2 { display: flex; align-items: baseline; gap: 8px; }
+  .screen { position: relative; aspect-ratio: 16 / 9; background: #070D17; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+  .screen video[hidden] { display: none; }
+  .screen video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .screen .hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+                  padding: 0 24px; color: var(--ink-2); font-size: 13px; }
+  .pctl { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 13px; flex-wrap: wrap; }
+  .pctl .t { font-family: var(--digits); color: var(--ink-3); }
+  .pctl .spacer { flex: 1; }
+  .clean { padding: 8px 0; border-bottom: 1px solid #1A2A42; font-size: 13px; }
+  .clean:last-child { border-bottom: 0; }
+  .clean .sub { display: block; font-size: 12px; margin-top: 2px; }
+  .warnbox { margin: 0 0 12px; padding: 9px 14px; border-radius: 6px; border: 1px solid rgba(242, 179, 61, .3);
+             background: rgba(242, 179, 61, .08); color: #F5D08A; font-size: 13px; }
+
+  dialog { width: min(680px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); }
+  dialog::backdrop { background: rgba(4, 9, 18, .66); }
+  dialog h2 { margin: 0; padding: 16px 20px; font-size: 16px; border-bottom: 1px solid var(--rule); }
+  dialog .body { padding: 4px 20px 16px; max-height: min(68vh, 620px); overflow-y: auto; }
+  dialog .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding: 14px 20px; border-top: 1px solid var(--rule);
+                 background: var(--bar); border-radius: 0 0 12px 12px; }
+  dialog .foot .toast { margin-right: auto; }
+  .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .camset { display: grid; grid-template-columns: 1.1fr 70px 90px 1.6fr; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #1A2A42; font-size: 13px; }
+  .camset.head { font-size: 12px; color: var(--ink-2); border-bottom-color: var(--rule); }
+  .camset input[type=number], .camset input[type=text] { padding: 6px 8px; }
+  .estimate { margin-top: 12px; font-size: 13px; color: var(--ink-3); }
+</style>
+</head>
+<body class="app">
+<header class="duty">
+  <a class="brand" href="/browser" aria-label="春雷问鉴 首页"><img src="/static/logo.svg" width="28" height="28" alt="">春雷问鉴</a>
+  <nav aria-label="页面">
+    <a href="/browser">值守台</a>
+    <a href="/duties">职责</a>
+    <a href="/alerts">告警</a>
+    <a href="/recording" aria-current="page">录像</a>
+    <a href="/actions">执行</a>
+    <a href="/skills">自学习</a>
+    <a href="/knowledge">知识库</a>
+    <a href="/settings">设置</a>
+  </nav>
+  <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
+  <span id="clock" class="clock" aria-label="当前时间"></span>
+</header>
+
+
+
+<div class="page">
+  <div class="page-head">
+    <div><h1>录像</h1><p>每路摄像头按分钟切片保存，超过保留天数自动删除；告警前后的片段单独保存。点时间轴上的蓝色区域回放。</p></div>
+    <span class="spacer"></span>
+    <div class="stats" aria-label="存储概况">
+      <div><span id="k-disk-l">磁盘</span><b id="k-disk">—</b><div class="bar"><i id="k-bar" style="width:0"></i></div></div>
+      <div><span>录像占用</span><b id="k-used">—</b></div>
+      <div><span>每天新增</span><b id="k-day">—</b></div>
+      <div><span>按现在的速度还能存</span><b id="k-left">—</b></div>
+      <div><span>告警片段</span><b id="k-alert">—</b></div>
+    </div>
+    <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
+  </div>
+  <div id="warn" class="warnbox" hidden></div>
+  <div class="layout">
+    <section class="panel main" aria-labelledby="t-cams">
+      <div class="toolbar">
+        <h2 id="t-cams">各路录像</h2><span class="sub" id="ret-line"></span>
+        <span style="flex:1"></span>
+        <label for="day" class="sr-only">日期</label><input id="day" type="date">
+        <button type="button" id="btn-set">保留设置</button>
+      </div>
+      <div class="list">
+        <div class="head-row"><span>摄像头</span><span>录像方式</span><span>今天</span><span>最早录像</span><span>保留</span><span>状态</span></div>
+        <div id="cams"></div>
+      </div>
+    </section>
+    <aside class="side">
+      <section class="panel player" aria-labelledby="t-player">
+        <h2 id="t-player">回放 <span class="sub" id="p-title"></span></h2>
+        <div class="screen"><video id="video" controls playsinline preload="metadata" hidden></video><div class="hint" id="p-hint">点左侧时间轴上的录像开始回放</div></div>
+        <div class="pctl"><button type="button" class="link" id="p-prev" disabled>‹ 往前 2 分钟</button><span class="t" id="p-range"></span>
+          <button type="button" class="link" id="p-next" disabled>往后 2 分钟 ›</button><span class="spacer"></span>
+          <a class="link" id="p-dl" href="#" download hidden>下载这段</a></div>
+      </section>
+      <section class="panel" aria-labelledby="t-clean">
+        <h2 id="t-clean">清理记录</h2>
+        <div id="cleans"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<dialog id="set-dlg" aria-labelledby="set-title">
+  <h2 id="set-title">保留设置</h2>
+  <div class="body">
+    <div class="three">
+      <div><label class="field" for="s-days">普通录像保留（天）</label><input id="s-days" type="number" min="1" max="3650"></div>
+      <div><label class="field" for="s-adays">告警片段保留（天）</label><input id="s-adays" type="number" min="1" max="3650"></div>
+      <div></div>
+      <div><label class="field" for="s-ca">磁盘到多少开始清理（%）</label><input id="s-ca" type="number" min="50" max="99"></div>
+      <div><label class="field" for="s-ct">清理到多少为止（%）</label><input id="s-ct" type="number" min="30" max="98"></div>
+      <div><label class="field" for="s-sa">到多少暂停录像（%）</label><input id="s-sa" type="number" min="60" max="100"></div>
+    </div>
+    <p class="sub" style="margin:8px 0 0">磁盘清理只删最早的普通录像，告警片段只按自己的天数删除。</p>
+    <span class="field" style="display:block;margin:16px 0 4px;font-size:13px;font-weight:500;color:var(--ink-3)">各路摄像头</span>
+    <div class="camset head"><span>摄像头</span><span>录像</span><span>保留（天）</span><span>录像地址（可选，留空用分析地址）</span></div>
+    <div id="s-cams"></div>
+    <p class="estimate" id="s-est"></p>
+  </div>
+  <div class="foot"><span class="toast err" id="set-err" role="alert"></span><button type="button" id="set-cancel">取消</button><button type="button" class="primary" id="set-ok">保存</button></div>
+</dialog>
+
+<script src="/static/console.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+let data = null, dayStart = 0, play = null, msgTimer = null;
+function msg(text, cls) { const m = $("msg"); m.textContent = text; m.className = "toast " + (cls || ""); clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.textContent = ""; }, 6000); }
+function gb(b) {
+  if (b == null) return "—";
+  if (b >= 1e12) return (b / 1e12).toFixed(b >= 1e13 ? 0 : 1) + " TB";
+  if (b >= 1e9) return (b / 1e9).toFixed(b >= 1e11 ? 0 : 1) + " GB";
+  if (b >= 1e6) return Math.round(b / 1e6) + " MB";
+  return Math.round(b / 1e3) + " KB";
+}
+const pad = (n) => String(n).padStart(2, "0");
+const hms = (ts) => { const d = new Date(ts * 1000); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const md = (ts) => { const d = new Date(ts * 1000); return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function dayValue(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+const MODE = { stream: "网络摄像头直存", push: "浏览器推送（按帧，低帧率）", local: "USB 摄像头（按帧，低帧率）", custom: "自定义接入（按帧）" };
+
+async function load() {
+  try { data = await vva.api("GET", "/api/recording/overview"); } catch (e) { msg(e.message, "err"); $("cams").innerHTML = `<p class="sub" style="padding:20px 0">${vva.esc(e.message)}</p>`; return; }
+  const d = data.disk, s = data.settings;
+  $("k-disk-l").textContent = "磁盘 " + (d.path.length > 18 ? "…" + d.path.slice(-16) : d.path);
+  $("k-disk").textContent = `${gb(d.used)} / ${gb(d.total)}`;
+  $("k-bar").style.width = Math.min(100, d.percent) + "%"; $("k-bar").className = d.percent >= s.clean_at ? "hot" : "";
+  $("k-used").textContent = gb(data.recording_bytes);
+  $("k-day").textContent = data.per_day_bytes ? gb(data.per_day_bytes) : "—";
+  const left = data.days_left;
+  $("k-left").textContent = left == null ? "—" : (left > 999 ? "999+ 天" : Math.floor(left) + " 天");
+  $("k-left").className = left != null && left < s.retention_days ? "hot" : "";
+  $("k-alert").textContent = `${data.alert_clips.count} 段 · ${gb(data.alert_clips.bytes)}`;
+  $("ret-line").textContent = `普通录像保留 ${s.retention_days} 天 · 告警片段 ${s.alert_retention_days} 天`;
+  const warns = [];
+  if (!data.ffmpeg) warns.push("服务器没有安装 ffmpeg：网络摄像头无法录像，回放也不可用。请执行 sudo apt install ffmpeg 后重启服务。");
+  if (data.paused) warns.push(`录像磁盘使用 ${d.percent}%，已暂停录像，请清理磁盘或调高“暂停录像”阈值。`);
+  else if (left != null && left < s.retention_days) warns.push(`按现在每天 ${gb(data.per_day_bytes)} 的速度，磁盘只够存约 ${Math.floor(left)} 天，少于设置的 ${s.retention_days} 天；到 ${s.clean_at}% 时会自动删除最早的录像。`);
+  $("warn").hidden = !warns.length; $("warn").textContent = warns.join(" ");
+  renderCams();
+  loadCleanups();
+}
+
+async function renderCams() {
+  const box = $("cams"); box.innerHTML = "";
+  const nowTs = Date.now() / 1000;
+  for (const c of data.cameras) {
+    const el = document.createElement("div"); el.className = "cam";
+    const st = c.status || {};
+    el.innerHTML = `<div class="row"><span class="nm" title="${vva.esc(c.label)}">${vva.esc(c.label)}</span>
+        <span class="mode" title="${vva.esc(MODE[c.type] || c.type)}">${vva.esc(MODE[c.type] || c.type)}${c.url_override ? " · 单独录像地址" : ""}</span>
+        <span class="num">${c.today_bytes ? gb(c.today_bytes) : "—"}</span><span class="num">${c.first ? md(c.first) : "—"}</span>
+        <span class="num">${c.retention_days} 天</span>
+        <span class="st ${st.state}" title="${vva.esc(st.text || "")}"><span class="dot ${st.state === "recording" ? "running" : ""}" aria-hidden="true"></span>${vva.esc(st.text || "")}</span></div>
+      <div class="tl" role="button" tabindex="0" aria-label="${vva.esc(c.label)} 的录像时间轴"><span class="tip"></span><span class="cursor"></span></div>
+      <div class="ticks"><span>0</span><span>3</span><span>6</span><span>9</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span></div>`;
+    const tl = el.querySelector(".tl");
+    if (nowTs > dayStart && nowTs < dayStart + 86400) {
+      const n = document.createElement("span"); n.className = "now"; n.style.left = ((nowTs - dayStart) / 864) + "%"; tl.appendChild(n);
+    }
+    const tip = el.querySelector(".tip");
+    const at = (ev) => { const r = tl.getBoundingClientRect(); return Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * 86400; };
+    tl.onmousemove = (ev) => { const s = at(ev); tip.style.left = (s / 864) + "%"; tip.textContent = hms(dayStart + s); };
+    tl.onclick = (ev) => openClip(c, dayStart + at(ev), el);
+    tl.onkeydown = (ev) => { if (ev.key === "Enter" && tl.dataset.first) openClip(c, Number(tl.dataset.first), el); };
+    box.appendChild(el);
+    vva.api("GET", `/api/recording/timeline?cam=${encodeURIComponent(c.id)}&day=${$("day").value}`).then(t => {
+      for (const [a, b] of t.spans) {
+        const seg = document.createElement("span"); seg.className = "seg";
+        seg.style.left = (a / 864) + "%"; seg.style.width = Math.max(0.15, (b - a) / 864) + "%"; tl.appendChild(seg);
+      }
+      if (t.spans.length) tl.dataset.first = String(t.start + t.spans[0][0]);
+      tl.title = t.spans.length ? `这天录了 ${Math.round(t.seconds / 360) / 10} 小时` : "这天没有录像";
+      if (play && play.cam === c.id) markCursor();
+    }).catch(() => {});
+  }
+  if (!data.cameras.length) box.innerHTML = '<p class="sub" style="padding:20px 0">还没有摄像头，请先在“设置 → 岗位与摄像头”里添加。</p>';
+}
+
+// ---------------- 回放
+function openClip(c, t, rowEl, len) {
+  play = { cam: c.id, label: c.label, start: Math.floor(t), len: len || 120 };
+  showClip();
+}
+function markCursor() {
+  document.querySelectorAll(".tl .cursor").forEach(x => x.style.display = "none");
+  if (!play) return;
+  const idx = data.cameras.findIndex(c => c.id === play.cam);
+  const tl = document.querySelectorAll(".cam .tl")[idx];
+  if (tl && play.start >= dayStart && play.start < dayStart + 86400) {
+    const cur = tl.querySelector(".cursor"); cur.style.left = ((play.start - dayStart) / 864) + "%"; cur.style.display = "block";
+  }
+}
+function showClip() {
+  const v = $("video"), end = play.start + play.len;
+  const url = `/api/playback/clip?cam=${encodeURIComponent(play.cam)}&start=${play.start}&end=${end}`;
+  $("p-title").textContent = play.label;
+  $("p-range").textContent = `${md(play.start)}:${pad(new Date(play.start * 1000).getSeconds())} – ${hms(end)}`;
+  $("p-hint").textContent = "正在准备片段…（H.265 等编码需要先转码，约几秒）"; $("p-hint").hidden = false; v.hidden = true;
+  $("p-prev").disabled = $("p-next").disabled = false;
+  $("p-dl").href = url; $("p-dl").hidden = false;
+  markCursor();
+  v.onloadeddata = () => { $("p-hint").hidden = true; v.hidden = false; v.play().catch(() => {}); };
+  v.onerror = async () => {
+    let t = "这段时间没有录像";
+    try { const r = await fetch(url); if (!r.ok) t = (await r.json()).detail || t; } catch (e) {}
+    $("p-hint").textContent = t; $("p-hint").hidden = false; v.hidden = true; $("p-dl").hidden = true;
+  };
+  v.src = url;
+}
+$("p-prev").onclick = () => { if (play) { play.start -= 120; showClip(); } };
+$("p-next").onclick = () => { if (play) { play.start += 120; showClip(); } };
+
+async function loadCleanups() {
+  try {
+    const r = await vva.api("GET", "/api/recording/cleanups");
+    $("cleans").innerHTML = r.cleanups.length ? r.cleanups.slice(0, 12).map(x => `<div class="clean">${vva.esc(x.time)} · ${vva.esc(x.reason)}
+        <span class="sub">${vva.esc(x.detail)}${x.camera ? " · " + vva.esc(x.camera) : ""} · ${x.files} 个文件，释放 ${gb(x.freed_bytes)}</span></div>`).join("")
+      : '<p class="sub" style="margin:0">还没有清理过。</p>';
+  } catch (e) {}
+}
+
+// ---------------- 保留设置
+function estimate() {
+  if (!data || !data.per_day_bytes) { $("s-est").textContent = ""; return; }
+  const per = {}; let total = 0;
+  const n = data.cameras.filter(c => c.enabled).length || 1;
+  document.querySelectorAll("#s-cams .camset").forEach(row => {
+    const on = row.querySelector("[data-k=enabled]").checked;
+    const days = Number(row.querySelector("[data-k=days]").value) || Number($("s-days").value) || 0;
+    if (on) total += data.per_day_bytes / n * days;
+  });
+  $("s-est").textContent = `按现在每天约 ${gb(data.per_day_bytes)} 估算，存满这些天数大约需要 ${gb(total)}，磁盘可用 ${gb(data.disk.free + data.recording_bytes)}。`;
+}
+function openSettings() {
+  const s = data.settings;
+  $("s-days").value = s.retention_days; $("s-adays").value = s.alert_retention_days;
+  $("s-ca").value = s.clean_at; $("s-ct").value = s.clean_to; $("s-sa").value = s.stop_at;
+  $("s-cams").innerHTML = data.cameras.map(c => {
+    const cs = (s.cameras || {})[c.id] || {};
+    return `<div class="camset" data-id="${vva.esc(c.id)}"><span>${vva.esc(c.label)}</span>
+      <label class="switch"><input type="checkbox" data-k="enabled" ${cs.enabled === false ? "" : "checked"}><span class="sr-only">录像</span></label>
+      <input type="number" data-k="days" min="1" max="3650" placeholder="${s.retention_days}" value="${cs.retention_days || ""}">
+      ${c.type === "stream" ? `<input type="text" data-k="url" placeholder="如主码流 rtsp://…/ch1/main/av_stream" value="${vva.esc(cs.url || "")}">` : '<span class="sub">按帧录制，不需要地址</span>'}</div>`;
+  }).join("");
+  $("set-dlg").querySelectorAll("input").forEach(i => i.oninput = estimate);
+  $("set-err").textContent = ""; estimate();
+  $("set-dlg").showModal();
+}
+$("btn-set").onclick = () => data && openSettings();
+$("set-cancel").onclick = () => $("set-dlg").close();
+$("set-ok").onclick = async () => {
+  const cams = {};
+  document.querySelectorAll("#s-cams .camset").forEach(row => {
+    const u = row.querySelector("[data-k=url]");
+    cams[row.dataset.id] = { enabled: row.querySelector("[data-k=enabled]").checked,
+      retention_days: row.querySelector("[data-k=days]").value || null, url: u ? u.value.trim() : "" };
+  });
+  const body = { retention_days: $("s-days").value, alert_retention_days: $("s-adays").value,
+                 clean_at: $("s-ca").value, clean_to: $("s-ct").value, stop_at: $("s-sa").value, cameras: cams };
+  try { await vva.api("PUT", "/api/recording/settings", body); $("set-dlg").close(); msg("已保存", "ok"); load(); }
+  catch (e) { $("set-err").textContent = e.message; }
+};
+
+$("day").value = params.get("day") || dayValue(new Date());
+$("day").max = dayValue(new Date());
+dayStart = new Date($("day").value + "T00:00:00").getTime() / 1000;
+$("day").onchange = () => { dayStart = new Date($("day").value + "T00:00:00").getTime() / 1000; renderCams(); };
+load().then(() => {
+  const cam = params.get("cam"), t = Number(params.get("t"));
+  const c = data && data.cameras.find(x => x.id === cam);
+  if (c && t) openClip(c, t - 10, null, Number(params.get("len")) || 120);
+});
+setInterval(() => { if (!$("set-dlg").open) load(); }, 60000);
+</script>
+</body>
+</html>

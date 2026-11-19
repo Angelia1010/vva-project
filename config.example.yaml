@@ -17,6 +17,17 @@ camera_settings:
 vision:
   max_concurrency: 6         # 同时调用视觉模型的上限（vLLM 的 --max-num-seqs 是 16，留出余量给对话）
 
+# ---------------------------------------------------------------- 录像
+# 每路摄像头按分钟切片存到 dir/<摄像头>/YYYYMMDD-HHMMSS.mp4；网页“录像”页可改天数、每路开关和录像地址（存在 data/ops.db）
+# 需要服务器安装 ffmpeg（sudo apt install ffmpeg）
+recording:
+  enabled: true
+  dir: data/recordings
+  retention_days: 10           # 普通录像保留天数
+  alert_clip: {before_s: 60, after_s: 60, retention_days: 180}   # 告警前后的片段，单独保留
+  disk_guard: {clean_at: 85, clean_to: 80, stop_at: 95}          # 磁盘使用率 %：开始清理 / 清理到 / 暂停录像
+  encoder: auto                # 回放时非 H.264 的录像要转码：auto 先试显卡 h264_nvenc，不行用 libx264
+
 # ---------------------------------------------------------------- 视频接入（单路的旧写法，也是 cameras 的默认值）
 video:
   # local  电脑摄像头（本地测试）

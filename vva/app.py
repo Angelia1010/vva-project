@@ -144,6 +144,11 @@ class App:
         obs_cfg["on_hit"] = self.duties.engine.on_hit
         self._obs_cfg = obs_cfg
         self.observers = ObserverPool(self.cameras, self._make_observer) if obs_cfg.get("enabled", True) else None
+        # 录像（可关闭）
+        self.recording = None
+        if (cfg.get("recording") or {}).get("enabled", True):
+            from vva.recording import RecordingService
+            self.recording = RecordingService(cfg["recording"], self.ops_db, self.cameras, self.bus)
         self.cameras.on_change(self._cameras_changed)
         self.station.on_change(self._stations_changed)
         self._offline: dict[str, dict[str, Any]] = {}     # 摄像头 → {"since", "alert_id"}
@@ -223,6 +228,8 @@ class App:
     def _cameras_changed(self) -> None:
         if self.observers:
             self.observers.sync()
+        if self.recording:
+            self.recording.sync()
         self.bus.publish(TOPIC_UI, {"type": "cameras_changed", "session": None})
         self.bus.publish(TOPIC_UI, {"type": "duties_changed", "session": None})
 
@@ -428,6 +435,8 @@ class App:
         if self.observers:
             self.observers.start()
         self._tasks.append(asyncio.create_task(self._camera_health_loop(), name="camera-health"))
+        if self.recording:
+            self.recording.start()
         self._tasks.append(asyncio.create_task(self._alert_loop(), name="alerts"))
         self._tasks += [asyncio.create_task(c) for c in self.duties.background_tasks()]
         if self.memory:
@@ -451,6 +460,8 @@ class App:
             await self.voice.stop()
         if self.observers:
             self.observers.stop()
+        if self.recording:
+            await self.recording.stop()
         self.cameras.stop()
         if self.memory:
             await self.memory.close()

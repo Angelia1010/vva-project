@@ -23,6 +23,17 @@ DEFAULTS: dict[str, Any] = {
     "cameras": [],
     "camera_settings": {"max": 4, "offline_after_s": 15, "offline_alert_s": 120},
     "vision": {"max_concurrency": 6},
+    # 录像：每路按分钟切片保存在 dir 下；网页“录像”页可改保留天数等设置（保存在 data/ops.db）
+    "recording": {
+        "enabled": True,
+        "dir": "data/recordings",
+        "segment_s": 60,
+        "retention_days": 10,
+        "frame_fps": 5,                                      # 浏览器推送、USB 摄像头按帧录制的帧率
+        "alert_clip": {"before_s": 60, "after_s": 60, "retention_days": 180},
+        "disk_guard": {"clean_at": 85, "clean_to": 80, "stop_at": 95},
+        "encoder": "auto",                                   # 回放转码：auto 先试显卡 h264_nvenc，不行用 libx264
+    },
     "audio": {
         "enabled": True,
         "input": {"type": "local", "sample_rate": 16000, "device": None,

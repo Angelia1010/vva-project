@@ -581,3 +581,25 @@ sudo systemctl restart vva-app
 | 显示“离线 N 分钟”，收到“摄像头离线”告警 | 网络或电源问题；恢复后告警的处理经过里会记“已恢复画面” |
 | 路数多了以后回答变慢 | `/api/status` 里看 `vision` 的排队时间；把不需要的摄像头停用，或调大 `observer.interval`、`observer.rule_check_interval` 让每路少看几次；必要时调大 `vision.max_concurrency`（不要超过 vLLM 的 `--max-num-seqs`） |
 | 想退回单摄像头版本 | `git checkout feat/duties && sudo systemctl restart vva-app`，数据库兼容，多出来的摄像头不会被使用 |
+
+
+## 16. 录像（feat/recording-search 分支）
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+git fetch origin && git checkout feat/recording-search && git pull
+which ffmpeg || sudo apt install -y ffmpeg
+source .venv/bin/activate && python -m pytest -q tests && deactivate
+sudo systemctl restart vva-app
+```
+
+- 录像默认存在 `data/recordings/`（即 `/data7` 盘上），保留 10 天；在“录像 → 保留设置”里可以改天数、每路开关。
+- 某一路分析用子码流、录像想用主码流时，在“保留设置”里给这一路填“录像地址”。
+- 现场摄像头 192.168.2.210 是 H.265，网页回放时会转码，点开要等几秒；想省掉这一步，可以在摄像头后台把编码改成 H.264。
+- 实测主码流约 1.2 Mbps，每路每天约 12～18 GB，4 路存 10 天约 0.5～0.7 TB。
+
+| 现象 | 处理 |
+|---|---|
+| 状态显示“服务器没有安装 ffmpeg” | `sudo apt install -y ffmpeg`，重启服务 |
+| 状态“中断 N 分钟” | 摄像头断网或地址错误：`journalctl -u vva-app | grep 录像` 看 ffmpeg 报错 |
+| 回放一直“正在准备片段” | H.265 转码较慢时会等十几秒；`journalctl -u vva-app | grep 转码` 看用的是显卡还是 CPU |

@@ -70,6 +70,7 @@
     <a href="/browser">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts" aria-current="page">告警</a>
+    <a href="/recording">录像</a>
     <a href="/actions">执行</a>
     <a href="/skills">自学习</a>
     <a href="/knowledge">知识库</a>
@@ -170,6 +171,21 @@ async function load() {
   showDetail(current);
 }
 
+async function loadClip(a) {
+  const box = $("clip-box"); if (!box) return;
+  const day = (() => { const d = new Date(a.ts * 1000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const more = `<a class="link" href="/recording?cam=${encodeURIComponent(a.camera || "")}&t=${Math.floor(a.ts)}&day=${day}">在录像页看前后</a>`;
+  try {
+    const r = await vva.api("GET", `/api/alerts/${a.id}/clip/info`);
+    if (current !== a.id || !$("clip-box")) return;
+    box.innerHTML = r.ready
+      ? `<video src="${r.url}" controls playsinline preload="metadata" style="width:100%;max-width:560px;border-radius:6px;background:#000"></video>
+         <p class="sub" style="margin:6px 0 0">告警前后各 1 分钟，保留到 ${vva.esc(r.keep_until)} · ${more}</p>`
+      : `<p class="sub" style="margin:0">${vva.esc(r.reason)}${r.reason === "录像未开启" ? "" : " · " + more}</p>`;
+    if (!r.ready && r.pending) setTimeout(() => { if (current === a.id) loadClip(a); }, 15000);
+  } catch (e) { box.innerHTML = `<p class="sub" style="margin:0">${vva.esc(e.message)}</p>`; }
+}
+
 async function showDetail(id) {
   let a;
   try { a = await vva.api("GET", "/api/alerts/" + id); } catch (e) { $("detail").innerHTML = `<p class="empty">${vva.esc(e.message)}</p>`; return; }
@@ -186,6 +202,7 @@ async function showDetail(id) {
         <dl class="why-meta"><dt>职责内容</dt><dd>${vva.esc(a.condition)}</dd>${a.rule_ref ? `<dt>规章依据</dt><dd>${vva.esc(a.rule_ref)}</dd>` : ""}
           ${a.handler ? `<dt>处理人</dt><dd>${vva.esc(a.handler)}${a.handled_text ? " · " + a.handled_text : ""}</dd>` : ""}${a.note ? `<dt>备注</dt><dd>${vva.esc(a.note)}</dd>` : ""}</dl></div>
       <div class="sec"><span class="label">现场截图</span>${shots ? `<div class="shots">${shots}</div>` : '<p class="sub" style="margin:0">没有保存截图。</p>'}</div>
+      <div class="sec"><span class="label">录像片段</span><div id="clip-box"><p class="sub" style="margin:0">正在查询…</p></div></div>
       <div class="sec"><span class="label">处理经过</span>
         <ol class="events">${a.events.map(e => `<li><span class="time">${e.time}</span><span>${vva.esc(e.text)} <span class="who">· ${vva.esc(e.actor)}</span></span></li>`).join("")}</ol></div>
     </div>
@@ -198,6 +215,7 @@ async function showDetail(id) {
         <button type="button" class="primary" data-a="resolve">已处理</button>${open ? '<button type="button" data-a="handling">处理中</button>' : ""}<button type="button" data-a="false">误报</button>`}</div>
       <label class="switch opt"><input type="checkbox" id="add-ref" checked>标为误报时，把截图作为“不算”的例子，下次复核时参考</label>
     </div>`}`;
+  loadClip(a);
   $("btn-del").onclick = async () => {
     if (!confirm(`删除这条“${a.duty_name}”告警？截图和处理经过会一起删除，不能恢复。`)) return;
     try { await vva.api("DELETE", "/api/alerts/" + a.id); msg("已删除", "ok"); current = 0; load(); }
