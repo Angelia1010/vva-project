@@ -243,7 +243,11 @@ def test_recording_api(tmp_path):
         assert s["retention_days"] == 5 and "******" in s["cameras"]["cam0"]["url"]
         c.put("/api/recording/settings", headers=h, json={"cameras": {"cam0": {"url": s["cameras"]["cam0"]["url"]}}})
         assert app.recording.settings()["cameras"]["cam0"]["url"] == "rtsp://a:pw@1.2.3.4/main"
-        assert c.get("/api/recording/timeline?cam=cam0").json()["spans"] == []
-        assert c.get(f"/api/playback/clip?cam=cam0&start={time.time() - 100}&end={time.time()}").status_code == 404
+        tl = c.get("/api/recording/timeline?cam=cam0").json()     # 测试里这一路刚推过一帧，可能已经录了零点几秒
+        assert tl["camera"] == "cam0" and isinstance(tl["spans"], list)
+        assert c.get("/api/recording/timeline?cam=cam0&day=2020-01-01").json()["spans"] == []
+        assert c.get("/api/recording/timeline?cam=cam0&day=bad").status_code == 400
+        old = time.time() - 30 * 86400
+        assert c.get(f"/api/playback/clip?cam=cam0&start={old}&end={old + 60}").status_code == 404
         assert c.get("/api/playback/clip?cam=nope&start=1&end=2").status_code == 404
         assert c.get("/recording").status_code == 200
