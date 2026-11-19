@@ -97,6 +97,9 @@
   .alert-item .btns button { flex: 1; }
   .no-alert { color: var(--ink-2); font-size: 13px; }
 
+  .search-pop { flex: 0 1 auto; max-height: 62%; min-height: 0; display: flex; flex-direction: column; padding: 12px 14px; border-color: #2B5A8F; }
+  .search-pop[hidden] { display: none; }
+  .search-pop ~ .alert-panel.hide-for-search { display: none; }
   .alert-panel { flex: 0 1 auto; max-height: 46%; display: flex; flex-direction: column; min-height: 0; }
   #alerts { flex: 1 1 auto; }
   .command { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -271,6 +274,7 @@
 
   <!-- 右：告警与指令 -->
   <section class="col-cmd">
+    <div class="panel search-pop" id="search-pop" hidden aria-label="录像检索结果"></div>
     <div class="panel alert-panel calm" id="alert-panel" aria-labelledby="t-alerts">
       <div class="alerts-head">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FF8A7F" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5a4 4 0 0 0-4 4V9l-1.5 2.5h11L12 9V5.5a4 4 0 0 0-4-4ZM6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
@@ -296,6 +300,7 @@
 </main>
 <script src="/static/console.js"></script>
 <script src="/static/duty-editor.js"></script>
+<script src="/static/search-panel.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
@@ -315,7 +320,47 @@ const TOOL_NAMES = {look_now: "看当前画面", locate: "定位目标", look_ba
   search_timeline: "查时间线", search_memory: "查记录", look_at_time: "看当时的画面", list_duties: "查看职责",
   add_task: "添加临时任务", remove_task: "取消临时任务", pause_duty: "暂停职责", resume_duty: "恢复职责",
   query_alerts: "查告警", ask_knowledge: "查知识库", remember_note: "记下备忘", forget_note: "删除备忘",
-  list_actions: "查看可执行的动作", run_action: "执行动作"};
+  list_actions: "查看可执行的动作", run_action: "执行动作",
+  search_video: "检索录像", control_search_result: "操作检索结果"};
+// ---------------- 录像检索结果：语音或文字发起检索后自动弹出，盖住告警栏
+const searchLines = {};
+let sp = null, spId = "";
+function searchPanel() {
+  if (!sp) sp = SearchPanel.mount(document.getElementById("search-pop"), { openLink: true, onClose: closeSearch });
+  return sp;
+}
+function openSearch() {
+  document.getElementById("search-pop").hidden = false;
+  document.getElementById("alert-panel").classList.add("hide-for-search");
+}
+function closeSearch(fromServer) {
+  document.getElementById("search-pop").hidden = true;
+  document.getElementById("alert-panel").classList.remove("hide-for-search");
+  if (sp) sp.clear();
+  spId = "";
+  if (!fromServer) fetch("/api/search/close", {method: "POST"}).catch(() => {});
+}
+function searchProgress(ev) {
+  let line = searchLines[ev.search_id];
+  if (!line) { line = addMsg("sys", ""); searchLines[ev.search_id] = line; }
+  line.textContent = "检索录像：" + ev.text;
+  if (!ev.done) { openSearch(); searchPanel().progress(ev.text); spId = ev.search_id; }
+}
+function searchResults(ev) {
+  const r = ev.result || {};
+  const line = searchLines[ev.search_id];
+  if (line) line.textContent = "检索录像：" + (r.found ? `找到 ${r.hits.length} 处` : "没有找到");
+  openSearch(); spId = ev.search_id;
+  searchPanel().show(r);
+}
+function searchControl(ev) {
+  if (ev.action === "close") { closeSearch(true); return; }
+  if (!sp || !sp.result || (spId && ev.search_id !== spId)) return;
+  openSearch();
+  if (ev.action === "play") sp.select(ev.index);
+  else if (ev.action === "zoom") { sp.select(ev.index); sp.zoom(ev.index, true); }
+  else if (ev.action === "unzoom") sp.zoom(ev.index, false);
+}
 function addTool(name, args) {
   const d = document.createElement("div"); d.className = "tool";
   const brief = Object.values(args || {}).filter(v => typeof v === "string").join("，").slice(0, 40);
@@ -461,6 +506,9 @@ function handle(ev) {
     case "tts": if (ev.state === "speaking") setVoice("播报中", undefined, true); else setVoice("空闲", "", false); break;
     case "asr": if (ev.ignored) { addMsg("sys", `（${ev.reason || "已忽略"}）${ev.text}`); setVoice("空闲", "", false); } break;
     case "error": addMsg("sys", "出错了：" + ev.message); break;
+    case "search_progress": searchProgress(ev); break;
+    case "search_results": searchResults(ev); break;
+    case "search_control": searchControl(ev); break;
   }
 }
 function connectChat() {

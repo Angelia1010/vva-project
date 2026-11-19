@@ -98,6 +98,12 @@
           <a class="entry" href="/feishu"><div><b>飞书</b><span>群里 @机器人 下指令，告警推送到飞书群</span></div><span class="st" id="st-feishu"></span></a>
         </div>
       </section>
+      <section class="panel" aria-labelledby="t-search" id="search-card" hidden>
+        <h2 id="t-search">视频检索</h2>
+        <div class="entry" style="cursor:default"><div><b>录像检索</b><span id="search-sub">用一句话在录像里找事，值守台可以语音搜，结果自动弹出</span></div>
+          <label class="switch" style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap">
+            <input type="checkbox" id="search-on"> <span id="search-st">关闭</span></label></div>
+      </section>
     </aside>
   </div>
 </div>
@@ -283,6 +289,24 @@ async function loadChannels() {
 }
 load(); loadChannels();
 setInterval(() => { if (!$("cam-dlg").open && !$("st-dlg").open) load(); }, 15000);
+</script>
+<script>
+(async function () {
+  let st;
+  try { st = await vva.api("GET", "/api/search/settings"); } catch (e) { return; }
+  if (!st.available) return;
+  const box = document.getElementById("search-on"), lab = document.getElementById("search-st");
+  const paint = (x) => {
+    box.checked = x.enabled; lab.textContent = x.enabled ? "已开启" : "关闭";
+    document.getElementById("search-sub").textContent = (x.recording ? "" : "没有开录像，只能搜关键画面；") +
+      `用一句话在录像里找事，值守台可以语音搜，结果自动弹出。已建索引 ${x.indexed} 条`;
+  };
+  paint(st); document.getElementById("search-card").hidden = false;
+  box.onchange = async () => {
+    try { paint(await vva.api("PUT", "/api/search/settings", { enabled: box.checked })); msg(box.checked ? "视频检索已开启" : "视频检索已关闭", "ok"); }
+    catch (e) { box.checked = !box.checked; msg(e.message, "err"); }
+  };
+})();
 </script>
 </body>
 </html>

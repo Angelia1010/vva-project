@@ -149,6 +149,15 @@ class App:
         if (cfg.get("recording") or {}).get("enabled", True):
             from vva.recording import RecordingService
             self.recording = RecordingService(cfg["recording"], self.ops_db, self.cameras, self.bus)
+        # 视频检索：搜索子智能体（可关闭）
+        self.search = None
+        if (cfg.get("search") or {}).get("enabled", True):
+            from vva.search import SearchService
+            self.search = SearchService(cfg["search"], self.ops_db, self.cameras, self.bus, self.llm,
+                                        self.vision.client(Priority.SEARCH, camera=lambda: ""), self.duties.alerts.store,
+                                        playback=self.recording.playback if self.recording else None, memory=self.memory,
+                                        scene=self.scene_text, link_base=self._web_link)
+            self.tools.providers.append(self.search.tools)
         self.cameras.on_change(self._cameras_changed)
         self.station.on_change(self._stations_changed)
         self._offline: dict[str, dict[str, Any]] = {}     # 摄像头 → {"since", "alert_id"}
@@ -216,6 +225,14 @@ class App:
         obs.vlm = self.vision.client(lambda: Priority.DUTY if obs._watching() else Priority.TIMELINE,
                                      key=f"observe:{cam_id}", camera=cam_id)
         return obs
+
+    def _web_link(self, session: str) -> str:
+        """钉钉、飞书里给出的网页链接前缀（各入口设置里的“网页地址”）。"""
+        name = (session or "").split(":")[0]
+        try:
+            return str(self.channels.config(name).get("web_url") or "") if name in self.channels.names() else ""
+        except Exception:
+            return ""
 
     def camera_options(self) -> list[dict[str, str]]:
         return [{"id": c.id, "name": c.name, "label": self.cameras.label(c.id)} for c in self.cameras.enabled()]
@@ -338,6 +355,7 @@ class App:
 
     def _extra_prompt(self) -> str:
         return (self.cameras_prompt() + self.duties.prompt_block() + self.actions.prompt_block()
+                + (self.search.prompt_block() if self.search else "")
                 + (self.skills.prompt_block() if self.skills else ""))
 
     def notify_targets(self) -> list[dict[str, str]]:
@@ -437,6 +455,8 @@ class App:
         self._tasks.append(asyncio.create_task(self._camera_health_loop(), name="camera-health"))
         if self.recording:
             self.recording.start()
+        if self.search:
+            self.search.start()
         self._tasks.append(asyncio.create_task(self._alert_loop(), name="alerts"))
         self._tasks += [asyncio.create_task(c) for c in self.duties.background_tasks()]
         if self.memory:
@@ -462,6 +482,8 @@ class App:
             self.observers.stop()
         if self.recording:
             await self.recording.stop()
+        if self.search:
+            await self.search.stop()
         self.cameras.stop()
         if self.memory:
             await self.memory.close()

@@ -603,3 +603,26 @@ sudo systemctl restart vva-app
 | 状态显示“服务器没有安装 ffmpeg” | `sudo apt install -y ffmpeg`，重启服务 |
 | 状态“中断 N 分钟” | 摄像头断网或地址错误：`journalctl -u vva-app | grep 录像` 看 ffmpeg 报错 |
 | 回放一直“正在准备片段” | H.265 转码较慢时会等十几秒；`journalctl -u vva-app | grep 转码` 看用的是显卡还是 CPU |
+
+## 17. 视频检索（feat/recording-search 分支）
+
+和录像在同一个分支，`git pull` 后重启即可，不需要新装东西：
+
+```bash
+cd /data7/Vision-Voice-Agent/vva-project
+git pull
+source .venv/bin/activate && python -m pytest -q tests && deactivate
+sudo systemctl restart vva-app
+```
+
+- 第一次启动会把已有的画面时间线（长期记忆里的记录）导入检索索引，`journalctl -u vva-app | grep 检索` 能看到导入条数。
+- 只有开了录像之后的时间段能播放、能精确定位；更早的只能显示当时的关键画面。
+- 一次检索一般 10～40 秒，最多看 16 张画面；调度上排在用户提问之后、职责巡检之前，检索期间巡检会稍慢。
+- 关闭：网页“设置 → 视频检索”，或 `config.yaml` 里 `search.enabled: false`。
+
+| 现象 | 处理 |
+|---|---|
+| 存储页没有搜索框 | 设置里检索被关掉了，或服务没加载到检索模块：`journalctl -u vva-app | grep 检索` |
+| 总说“没有找到” | 时间范围外没有记录：换个说法或把时间放宽；看“设置 → 视频检索”里已建索引条数是否在涨 |
+| 结果只有图片没有视频 | 那段时间没有录像（录像关着或摄像头中断） |
+

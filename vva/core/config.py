@@ -34,6 +34,16 @@ DEFAULTS: dict[str, Any] = {
         "disk_guard": {"clean_at": 85, "clean_to": 80, "stop_at": 95},
         "encoder": "auto",                                   # 回放转码：auto 先试显卡 h264_nvenc，不行用 libx264
     },
+    # 视频检索：搜索子智能体（网页“设置”里可以随时关掉，存在 data/ops.db）
+    "search": {
+        "enabled": True,
+        "retention_days": 30,                                # 检索索引保留多久（与长期记忆一致）
+        "verify_frames": True,                               # 看候选画面确认
+        "refine_time": True,                                 # 在录像里找事情开始的时刻
+        "channels": ["web", "dingtalk", "feishu"],           # 哪些入口能用
+        "budget": {"max_candidates": 10, "max_frames": 16, "max_hits": 8, "timeout_s": 40},
+        "dir": "data/search",                                # 结果缩略图
+    },
     "audio": {
         "enabled": True,
         "input": {"type": "local", "sample_rate": 16000, "device": None,

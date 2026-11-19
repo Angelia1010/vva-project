@@ -5,6 +5,7 @@
 
   USER     用户提问（看画面、定位、回看）        —— 最先
   VERIFY   告警复核
+  SEARCH   录像检索（搜索子智能体看候选画面）
   DUTY     职责检查（有生效职责的摄像头的后台观察、巡检）
   TIMELINE 画面时间线描述（没有职责的摄像头）      —— 最后
 
@@ -30,11 +31,13 @@ log = logging.getLogger(__name__)
 class Priority(IntEnum):
     USER = 0
     VERIFY = 1
-    DUTY = 2
-    TIMELINE = 3
+    SEARCH = 2
+    DUTY = 3
+    TIMELINE = 4
 
 
-LABELS = {Priority.USER: "用户提问", Priority.VERIFY: "告警复核", Priority.DUTY: "职责检查", Priority.TIMELINE: "时间线"}
+LABELS = {Priority.USER: "用户提问", Priority.VERIFY: "告警复核", Priority.SEARCH: "录像检索", Priority.DUTY: "职责检查",
+          Priority.TIMELINE: "时间线"}
 
 
 class Superseded(Exception):

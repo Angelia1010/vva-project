@@ -28,6 +28,18 @@ recording:
   disk_guard: {clean_at: 85, clean_to: 80, stop_at: 95}          # 磁盘使用率 %：开始清理 / 清理到 / 暂停录像
   encoder: auto                # 回放时非 H.264 的录像要转码：auto 先试显卡 h264_nvenc，不行用 libx264
 
+# ---------------------------------------------------------------- 视频检索（搜索子智能体）
+# 一句话在录像里找事：先查画面时间线和告警，再让视觉模型看候选画面确认，并在录像里找到事情开始的时刻。
+# 网页“设置 → 视频检索”可以随时开关（存在 data/ops.db，优先于这里）
+search:
+  enabled: true
+  retention_days: 30           # 检索索引保留天数
+  verify_frames: true          # 看候选画面确认（关掉只按文字和告警给结果，更快但不准）
+  refine_time: true            # 在录像里往前找事情开始的时刻
+  channels: [web, dingtalk, feishu]   # 哪些入口能用；钉钉、飞书里返回链接和第一处的画面
+  budget: {max_candidates: 10, max_frames: 16, max_hits: 8, timeout_s: 40}
+  dir: data/search             # 结果缩略图
+
 # ---------------------------------------------------------------- 视频接入（单路的旧写法，也是 cameras 的默认值）
 video:
   # local  电脑摄像头（本地测试）

@@ -62,6 +62,20 @@
   .clean { padding: 8px 0; border-bottom: 1px solid #1A2A42; font-size: 13px; }
   .clean:last-child { border-bottom: 0; }
   .clean .sub { display: block; font-size: 12px; margin-top: 2px; }
+  .searchbar { padding: 10px 12px; margin-bottom: 14px; flex: 0 0 auto; }
+  .searchbar form { display: flex; gap: 8px; align-items: center; margin: 0; }
+  .searchbar input[type=text] { flex: 1 1 auto; min-width: 0; height: 38px; }
+  .searchbar select { flex: 0 0 auto; }
+  .searchbar button { white-space: nowrap; flex: 0 0 auto; }
+  .searchbar .hist { position: relative; }
+  .searchbar .hist-list { position: absolute; right: 0; top: 36px; z-index: 5; width: 340px; max-height: 300px; overflow-y: auto; padding: 6px;
+                          background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .searchbar .hist-list button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; font-size: 13px; }
+  .searchbar .hist-list button:hover { background: #152741; }
+  .searchbar .hist-list .sub { margin-left: 6px; }
+  #view-search { flex: 1 1 auto; min-height: 0; padding: 12px 16px 14px; display: flex; flex-direction: column; }
+  #view-search[hidden], #view-cams[hidden] { display: none; }
+  #view-cams { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
   .warnbox { margin: 0 0 12px; padding: 9px 14px; border-radius: 6px; border: 1px solid rgba(242, 179, 61, .3);
              background: rgba(242, 179, 61, .08); color: #F5D08A; font-size: 13px; }
 
@@ -111,9 +125,23 @@
     <div><span>按现在的速度还能存</span><b id="k-left">—</b></div>
     <div><span>告警片段</span><b id="k-alert">—</b></div>
   </section>
+  <section class="panel searchbar" id="searchbar" hidden aria-label="检索录像">
+    <form id="sform">
+      <label for="sq" class="sr-only">要找什么</label>
+      <input id="sq" type="text" maxlength="200" placeholder="找录像：一句话描述要找的事，如“昨天下午仓库有没有人抽烟”" autocomplete="off">
+      <label for="scam" class="sr-only">摄像头</label><select id="scam"><option value="">全部摄像头</option></select>
+      <label for="srange" class="sr-only">时间</label>
+      <select id="srange"><option value="">按描述里的时间</option><option value="1h">最近 1 小时</option><option value="today">今天</option>
+        <option value="yesterday">昨天</option><option value="3d">最近 3 天</option><option value="10d">最近 10 天</option></select>
+      <button type="submit" class="primary" id="sgo">搜索</button>
+      <span class="hist"><button type="button" class="link" id="shist">搜索历史</button><div class="hist-list" id="shist-list" hidden></div></span>
+    </form>
+  </section>
   <div id="warn" class="warnbox" hidden></div>
   <div class="layout">
     <section class="panel main" aria-labelledby="t-cams">
+      <div id="view-search" hidden></div>
+      <div id="view-cams">
       <div class="toolbar">
         <h2 id="t-cams">各路录像</h2><span class="sub" id="ret-line"></span>
         <span style="flex:1"></span>
@@ -123,6 +151,7 @@
       <div class="list">
         <div class="head-row"><span>摄像头</span><span>录像方式</span><span>今天</span><span>最早录像</span><span>保留</span><span>状态</span></div>
         <div id="cams"></div>
+      </div>
       </div>
     </section>
     <aside class="side">
@@ -162,6 +191,7 @@
 </dialog>
 
 <script src="/static/console.js"></script>
+<script src="/static/search-panel.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -322,6 +352,77 @@ $("set-ok").onclick = async () => {
   try { await vva.api("PUT", "/api/recording/settings", body); $("set-dlg").close(); msg("已保存", "ok"); load(); }
   catch (e) { $("set-err").textContent = e.message; }
 };
+
+// ---------------- 检索录像
+let panel = null, polling = null;
+function fmtT(d) { return `${dayValue(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function rangeOf(v) {
+  const now = new Date(), d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (v === "1h") return [fmtT(new Date(now - 3600e3)), fmtT(now)];
+  if (v === "today") return [fmtT(d0), fmtT(now)];
+  if (v === "yesterday") return [fmtT(new Date(d0 - 86400e3)), fmtT(d0)];
+  if (v === "3d") return [fmtT(new Date(now - 3 * 86400e3)), fmtT(now)];
+  if (v === "10d") return [fmtT(new Date(now - 10 * 86400e3)), fmtT(now)];
+  return ["", ""];
+}
+function showSearchView(on) {
+  $("view-search").hidden = !on; $("view-cams").hidden = on;
+  if (on && !panel) panel = SearchPanel.mount($("view-search"), { wide: true, onClose: () => { showSearchView(false); clearInterval(polling); $("sgo").textContent = "搜索"; } });
+}
+async function poll(sid) {
+  clearInterval(polling);
+  const tick = async () => {
+    let r;
+    try { r = await vva.api("GET", "/api/search/" + encodeURIComponent(sid)); } catch (e) { clearInterval(polling); msg(e.message, "err"); return; }
+    if (r.status === "running") { panel.progress(r.progress); return; }
+    clearInterval(polling); $("sgo").textContent = "搜索"; $("sgo").dataset.sid = "";
+    if (r.status === "done" && r.result) { panel.show(r.result); if (!$("sq").value) $("sq").value = r.question; }
+    else panel.progress(r.status === "cancelled" ? "已取消" : "检索失败：" + ((r.result && r.result.error) || ""));
+  };
+  polling = setInterval(tick, 1000); tick();
+}
+$("sform").onsubmit = async (e) => {
+  e.preventDefault();
+  if ($("sgo").dataset.sid) {                          // 搜索中再点：取消
+    try { await vva.api("POST", `/api/search/${$("sgo").dataset.sid}/cancel`); } catch (err) {}
+    return;
+  }
+  const q = $("sq").value.trim();
+  if (!q) { $("sq").focus(); msg("请先输入要找什么", "err"); return; }
+  const [start, end] = rangeOf($("srange").value);
+  showSearchView(true); panel.progress("正在理解问题…");
+  try {
+    const r = await vva.api("POST", "/api/search", { question: q, camera: $("scam").value, start, end });
+    $("sgo").textContent = "取消"; $("sgo").dataset.sid = r.search_id;
+    history.replaceState(null, "", "/recording?search=" + encodeURIComponent(r.search_id));
+    poll(r.search_id);
+  } catch (err) { panel.progress(err.message); }
+};
+$("shist").onclick = async () => {
+  const box = $("shist-list");
+  if (!box.hidden) { box.hidden = true; return; }
+  try {
+    const h = (await vva.api("GET", "/api/search/history")).history;
+    box.innerHTML = h.length ? h.map(x => `<button type="button" data-id="${vva.esc(x.id)}">${vva.esc(x.question)}<span class="sub">${vva.esc(x.time)} · ${x.hits} 处</span></button>`).join("")
+                             : '<p class="sub" style="margin:6px">还没有搜索过。</p>';
+    box.querySelectorAll("button").forEach(b => b.onclick = () => { box.hidden = true; showSearchView(true); poll(b.dataset.id); });
+    box.hidden = false;
+  } catch (e) { msg(e.message, "err"); }
+};
+document.addEventListener("click", (e) => { if (!e.target.closest(".hist")) $("shist-list").hidden = true; });
+async function initSearch() {
+  let st;
+  try { st = await vva.api("GET", "/api/search/settings"); } catch (e) { return; }
+  if (!st.available || !st.enabled) return;
+  $("searchbar").hidden = false;
+  try {
+    const cams = (await vva.api("GET", "/api/cameras")).cameras;
+    $("scam").innerHTML = '<option value="">全部摄像头</option>' + cams.map(c => `<option value="${vva.esc(c.id)}">${vva.esc(c.label)}</option>`).join("");
+    if (cams.length <= 1) $("scam").hidden = true;
+  } catch (e) { $("scam").hidden = true; }
+  if (params.get("search")) { showSearchView(true); poll(params.get("search")); }
+}
+initSearch();
 
 $("day").value = params.get("day") || dayValue(new Date());
 $("day").max = dayValue(new Date());

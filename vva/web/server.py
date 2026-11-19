@@ -254,6 +254,10 @@ def create_web_app(app: App) -> FastAPI:
     from vva.web.recording_api import register_recording_routes
     register_recording_routes(api, app, web_cfg.get("admin_token") or "", STATIC_DIR)
 
+    # ------------------------------------------------------------ 视频检索
+    from vva.web.search_api import register_search_routes
+    register_search_routes(api, app, web_cfg.get("admin_token") or "")
+
     # ------------------------------------------------------------ 岗位与摄像头
     from vva.web.cameras_api import register_camera_routes
     register_camera_routes(api, app, web_cfg.get("admin_token") or "")
