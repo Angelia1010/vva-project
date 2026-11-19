@@ -119,6 +119,7 @@ models:
     max_image_side: 1280
     # 定位框坐标格式：0-1000（Qwen3-VL、Gemini 等）| 0-1 | pixel（Qwen2.5-VL）
     bbox_format: "0-1000"
+    max_images: 4       # 一次最多发几张图，要和 vLLM 的 --limit-mm-per-prompt 一致（scripts/models*.env 的 VLM_MAX_IMAGES）
     json_mode: false    # 服务支持 response_format=json_object 时可打开
     # 推理模型可关闭思考以降低延迟，例如 vLLM 部署的 Qwen3 系列：
     # extra_body: {chat_template_kwargs: {enable_thinking: false}}

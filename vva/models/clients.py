@@ -19,6 +19,16 @@ from vva.audio.utils import pcm_to_wav, resample_pcm16, wav_to_pcm
 log = logging.getLogger(__name__)
 
 
+def pick_evenly(items: list[Any], n: int) -> list[Any]:
+    """从列表里均匀取 n 个，保留第一个和最后一个。"""
+    if n <= 0 or len(items) <= n:
+        return list(items)
+    if n == 1:
+        return [items[-1]]
+    step = (len(items) - 1) / (n - 1)
+    return [items[round(i * step)] for i in range(n)]
+
+
 def _make_client(cfg: dict[str, Any]):
     try:
         from openai import AsyncOpenAI
@@ -105,10 +115,14 @@ class VisionModel:
         self.model = cfg["model"]
         self.bbox_format = cfg.get("bbox_format", "0-1000")
         self.max_image_side = int(cfg.get("max_image_side", 1280))
+        self.max_images = max(1, int(cfg.get("max_images") or 4))
         self.client = _make_client(cfg)
 
     async def ask(self, images: list[bytes], prompt: str, system: str | None = None,
                   json_mode: bool = False, max_tokens: int | None = None) -> str:
+        if len(images) > self.max_images:             # 兜底：调用方应自己控制张数，这里均匀抽取，保留首尾
+            log.warning("视觉模型一次最多 %d 张图，收到 %d 张，已均匀抽取", self.max_images, len(images))
+            images = pick_evenly(images, self.max_images)
         content: list[dict[str, Any]] = [
             {"type": "image_url",
              "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}}

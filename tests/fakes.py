@@ -31,6 +31,8 @@ class FakeLLM:
 
 class FakeVLM:
     bbox_format = "0-1000"
+    max_images = 4                 # 和现场 vLLM 的 --limit-mm-per-prompt 一致，超过就报错，防止再犯
+
 
     def __init__(self, answers: dict[str, str] | None = None, default: str = "画面中有一块表盘，读数约为 42。") -> None:
         self.answers = answers or {}
@@ -38,6 +40,8 @@ class FakeVLM:
         self.requests: list[tuple[int, str]] = []
 
     async def ask(self, images, prompt, system=None, json_mode=False, max_tokens=None):
+        if len(images) > self.max_images:
+            raise RuntimeError(f"At most {self.max_images} image(s) may be provided in one prompt.")
         self.requests.append((len(images), prompt))
         for key, ans in self.answers.items():
             if key in prompt:

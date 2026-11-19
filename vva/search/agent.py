@@ -193,13 +193,15 @@ class SearchAgent:
     # ---------------------------------------------------------------- 4. 精确定位
     async def refine(self, ev: Event, look_for: str) -> int:
         """在命中点之前 30 秒内找开始时刻。返回用掉的画面数。"""
-        times = [ev.ts - 30, ev.ts - 20, ev.ts - 10, ev.ts - 5]
+        # 加上命中那一张，总数不超过模型一次能收的图片数（vLLM --limit-mm-per-prompt）
+        before = int(getattr(self.vlm, "max_images", 4) or 4) - 1
+        offsets = {4: [30, 20, 10, 5], 3: [30, 15, 5], 2: [20, 5], 1: [10]}.get(min(4, before), [])
         frames: list[tuple[bytes, float]] = []
-        for t in times:
+        for t in (ev.ts - o for o in offsets):
             jpeg, real = await self.frame(ev.camera, t)
             if jpeg and abs(real - t) < 4:              # 只用录像里真实存在的那一秒
                 frames.append((jpeg, real))
-        if len(frames) < 2:
+        if not frames or len(frames) < min(2, len(offsets)):
             return 0
         frames.append((ev.jpeg, ev.ts))
         prompt = prompts.REFINE_PROMPT.format(n=len(frames), look_for=look_for,
@@ -238,6 +240,9 @@ class SearchAgent:
                     ok = await self.verify(ev, plan.look_for)
                 except Superseded:
                     ok = None
+                except Exception as e:                  # 单个候选看图出错不影响整次检索
+                    log.warning("检索看图确认失败：%s", e)
+                    ok = None
                 frames_used += 1
                 if ok is None and (ev.alert_id or ev.score >= 2):   # 没有画面可看：告警或多次命中的记录照样算，标为未确认
                     ev.evidence = ev.alert_evidence or (ev.texts[0] if ev.texts else "")
@@ -258,6 +263,8 @@ class SearchAgent:
                         frames_used += await self.refine(ev, plan.look_for)
                     except Superseded:
                         pass
+                    except Exception as e:
+                        log.warning("检索精确定位失败：%s", e)
         hits.sort(key=lambda e: e.start)
         return {"plan": plan, "scope": scope, "hits": hits, "notes": notes, "candidates": len(events)}
 

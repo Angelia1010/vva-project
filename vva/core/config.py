@@ -71,7 +71,7 @@ DEFAULTS: dict[str, Any] = {
         "agent_llm": {"base_url": "", "api_key": "", "model": "", "temperature": 0.3,
                       "stream": True, "timeout": 60, "max_tokens": 400, "extra_body": None},
         "vlm": {"base_url": "", "api_key": "", "model": "", "temperature": 0.1,
-                "timeout": 60, "max_image_side": 1280, "bbox_format": "0-1000",
+                "timeout": 60, "max_image_side": 1280, "bbox_format": "0-1000", "max_images": 4,
                 "json_mode": False, "max_tokens": 1024, "extra_body": None},
         "asr": {"base_url": "", "api_key": "", "model": "", "language": "zh",
                 "prompt": "", "timeout": 30, "extra_body": None},

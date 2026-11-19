@@ -120,7 +120,8 @@ class Observer:
         if not (self.references and watching):
             return []
         words = [w for r in watching for w in (r.condition, *getattr(r, "objects", []))]
-        return self.references(" ".join(words))[:4]
+        cap = max(1, int(getattr(self.vlm, "max_images", 5) or 5) - 1)      # 留一张给当前画面
+        return self.references(" ".join(words))[:min(4, cap)]
 
     def build_prompt(self, refs: list[tuple[str, bytes]] | None = None) -> str:
         last = self.timeline.latest(self.camera_id or None)

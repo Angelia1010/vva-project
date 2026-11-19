@@ -97,7 +97,8 @@ def test_plan_falls_back_to_last_24h_and_resolves_camera(tmp_path):
 def test_search_run_verifies_refines_and_saves(tmp_path):
     async def run():
         refine = json.dumps({"first": 2})
-        svc, _, _ = _env(tmp_path, vlm=FakeVLM(answers={"从第几张开始": refine, "要确认的情况": YES}))
+        vlm = FakeVLM(answers={"从第几张开始": refine, "要确认的情况": YES})
+        svc, _, _ = _env(tmp_path, vlm=vlm)
         now = time.time()
         svc.index.add("cam0", now - 600, "门口有人抽烟")
         svc.index.add("cam1", now - 300, "库房有人吸烟")
@@ -106,7 +107,8 @@ def test_search_run_verifies_refines_and_saves(tmp_path):
         assert r["found"] and len(r["hits"]) == 2 and r["hits"][0]["camera"] == "cam0"       # 按时间排
         h = r["hits"][0]
         assert h["box"] and h["evidence"] == "左侧男子手里夹着香烟" and h["thumb"].endswith("/thumb/0")
-        assert h["start"] == pytest.approx(now - 620, abs=2)                 # 精确定位：第 2 张（前 20 秒）开始出现
+        assert h["start"] == pytest.approx(now - 615, abs=2)                 # 精确定位：第 2 张（前 15 秒）开始出现
+        assert max(n for n, _ in vlm.requests) <= 4                           # 一次最多 4 张图
         assert os.path.isfile(svc.thumb_path(r["search_id"], 0))
         assert "找到 2 处" in r["summary"] and svc.get(r["search_id"])["status"] == "done"
         types = [e["type"] for e in _drain(ui)]
@@ -237,3 +239,9 @@ def test_search_api(tmp_path):
         assert c.put("/api/search/settings", json={"enabled": False}).status_code == 401
         assert c.put("/api/search/settings", headers={"X-Token": "pw"}, json={"enabled": False}).json()["enabled"] is False
         assert c.post("/api/search", json={"question": "x"}).status_code == 403
+
+
+def test_pick_evenly_and_client_cap():
+    from vva.models.clients import pick_evenly
+    assert pick_evenly(list(range(8)), 4) == [0, 2, 5, 7] and pick_evenly([1, 2], 4) == [1, 2]
+    assert pick_evenly(list(range(5)), 1) == [4]

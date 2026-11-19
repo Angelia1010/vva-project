@@ -64,6 +64,9 @@ class Verifier:
         full = encode_jpeg(img, 90)
         refs = (self.references(" ".join([duty.condition, *duty.objects])) if self.references else [])[:3]
         refs += [("误报的例子（这种情况不算）", j) for j in (self.negatives(duty) if self.negatives else [])[:2]]
+        cap = max(1, int(getattr(self.vlm, "max_images", 6) or 6)) - 1      # 留一张给当前画面
+        if len(refs) > cap:                       # 参考图优先，误报例子其次
+            refs = refs[:cap]
         ref_text = ""
         if refs:
             ref_text = f"前 {len(refs)} 张是参考图（" + "；".join(f"图{i}是{label}" for i, (label, _) in enumerate(refs, 1)) + "），"

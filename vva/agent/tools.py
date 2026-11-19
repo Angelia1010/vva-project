@@ -192,7 +192,8 @@ class VisionTools(ToolProvider):
         cid, err = self.pick(camera)
         if err:
             return {"error": err}
-        frames = min(8, max(2, int(frames or 4)))
+        cap = max(2, int(getattr(self.vlm, "max_images", 8) or 8))
+        frames = min(8, cap, max(2, int(frames or 4)))
         buf = self.frames.buffer(cid)
         bfs = buf.range(float(seconds), frames) if buf else []
         if not bfs:

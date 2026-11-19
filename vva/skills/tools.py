@@ -78,7 +78,7 @@ class SkillTools(ToolProvider):
             names = "、".join(o.name for _, o in self.mgr.objects()) or "无"
             return {"error": f"已启用的技能里没有“{target}”，可用目标：{names}"}
         skill, obj = found
-        refs = self.mgr.references(skill, obj)
+        refs = self.mgr.references(skill, obj)[:max(0, int(getattr(self.vlm, "max_images", 4) or 4) - 1)]
         bf = self.buffer.latest_snapshot(quality=92)
         if bf is None:
             return {"error": "暂时没有画面，请检查摄像头"}
