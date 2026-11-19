@@ -220,6 +220,10 @@ def test_search_api(tmp_path):
     from vva.web.server import create_web_app
     app = _app(tmp_path, FakeLLM([_plan()]), vlm=FakeVLM(default=YES), web={"admin_token": "pw"})
     app.search.index.add("cam0", time.time() - 600, "门口有人抽烟")
+
+    async def frame(camera, t):                 # 测试环境没有录像和关键画面，给一张固定画面
+        return JPEG, t
+    app.search.agent.frame = frame
     with TestClient(create_web_app(app)) as c:
         assert c.post("/api/search", json={"question": ""}).status_code == 400
         sid = c.post("/api/search", json={"question": "有人抽烟吗"}).json()["search_id"]
