@@ -4,18 +4,19 @@
 <meta charset="UTF-8">
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>录像 - 春雷问鉴</title>
+<title>存储 - 春雷问鉴</title>
 <link rel="stylesheet" href="/static/console.css">
 <style>
-  .stats { display: flex; gap: 26px; align-items: flex-end; flex-wrap: wrap; }
-  .stats div { display: flex; flex-direction: column; align-items: flex-end; }
-  .stats span { font-size: 12px; color: var(--ink-2); }
-  .stats b { font: 600 22px/1.15 var(--digits); font-variant-numeric: tabular-nums; }
-  .stats b.hot { color: var(--alert-soft); }
-  .stats .bar { width: 120px; height: 5px; border-radius: 3px; background: var(--rule); margin-top: 5px; overflow: hidden; }
-  .stats .bar i { display: block; height: 100%; background: var(--cyan); }
-  .stats .bar i.hot { background: var(--lamp-alert); }
-
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 12px 8px; margin-bottom: 14px; flex: 0 0 auto; }
+  .kpis > div { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 3px; min-width: 0; }
+  .kpis > div + div { border-left: 1px solid var(--rule); }
+  .kpis span { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .kpis b { font: 600 22px/1.15 var(--digits); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .kpis b.hot { color: var(--alert-soft); }
+  .kpis .bar { width: min(140px, 80%); height: 5px; border-radius: 3px; background: var(--rule); margin-top: 3px; overflow: hidden; }
+  .kpis .bar i { display: block; height: 100%; background: var(--cyan); }
+  .kpis .bar i.hot { background: var(--lamp-alert); }
+  @media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; } .kpis > div + div { border-left: 0; } }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start; }
   @media (max-width: 1400px) { .layout { grid-template-columns: minmax(0, 1fr) 380px; } }
   @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
@@ -85,11 +86,11 @@
     <a href="/browser">值守台</a>
     <a href="/duties">职责</a>
     <a href="/alerts">告警</a>
-    <a href="/recording" aria-current="page">录像</a>
     <a href="/actions">执行</a>
     <a href="/skills">自学习</a>
     <a href="/knowledge">知识库</a>
     <a href="/settings">设置</a>
+    <a href="/recording" aria-current="page">存储</a>
   </nav>
   <div class="lamps"><span id="msg" class="toast" role="status"></span></div>
   <span id="clock" class="clock" aria-label="当前时间"></span>
@@ -99,17 +100,17 @@
 
 <div class="page">
   <div class="page-head">
-    <div><h1>录像</h1><p>每路摄像头按分钟切片保存，超过保留天数自动删除；告警前后的片段单独保存。点时间轴上的蓝色区域回放。</p></div>
+    <div><h1>存储</h1><p>每路摄像头按分钟切片保存录像，超过保留天数自动删除；告警前后的片段单独保存。点时间轴上的蓝色区域回放。</p></div>
     <span class="spacer"></span>
-    <div class="stats" aria-label="存储概况">
-      <div><span id="k-disk-l">磁盘</span><b id="k-disk">—</b><div class="bar"><i id="k-bar" style="width:0"></i></div></div>
-      <div><span>录像占用</span><b id="k-used">—</b></div>
-      <div><span>每天新增</span><b id="k-day">—</b></div>
-      <div><span>按现在的速度还能存</span><b id="k-left">—</b></div>
-      <div><span>告警片段</span><b id="k-alert">—</b></div>
-    </div>
     <input id="token" class="token" type="password" placeholder="管理口令" aria-label="管理口令">
   </div>
+  <section class="panel kpis" aria-label="存储概况">
+    <div><span id="k-disk-l">磁盘</span><b id="k-disk">—</b><div class="bar"><i id="k-bar" style="width:0"></i></div></div>
+    <div><span>录像占用</span><b id="k-used">—</b></div>
+    <div><span>每天新增</span><b id="k-day">—</b></div>
+    <div><span>按现在的速度还能存</span><b id="k-left">—</b></div>
+    <div><span>告警片段</span><b id="k-alert">—</b></div>
+  </section>
   <div id="warn" class="warnbox" hidden></div>
   <div class="layout">
     <section class="panel main" aria-labelledby="t-cams">
@@ -182,7 +183,7 @@ const MODE = { stream: "网络摄像头直存", push: "浏览器推送（按帧�
 async function load() {
   try { data = await vva.api("GET", "/api/recording/overview"); } catch (e) { msg(e.message, "err"); $("cams").innerHTML = `<p class="sub" style="padding:20px 0">${vva.esc(e.message)}</p>`; return; }
   const d = data.disk, s = data.settings;
-  $("k-disk-l").textContent = "磁盘 " + (d.path.length > 18 ? "…" + d.path.slice(-16) : d.path);
+  $("k-disk-l").textContent = "磁盘"; $("k-disk-l").parentElement.title = "录像目录：" + d.path;
   $("k-disk").textContent = `${gb(d.used)} / ${gb(d.total)}`;
   $("k-bar").style.width = Math.min(100, d.percent) + "%"; $("k-bar").className = d.percent >= s.clean_at ? "hot" : "";
   $("k-used").textContent = gb(data.recording_bytes);
